@@ -82,65 +82,49 @@ def get_Sij_Hij(psi_i, psi_j, h):
     return Sij, Hij
 
 
+def _n_m_s (dm1s, dm2s, _print_fn=print):
+    neleca = np.trace (dm1s[0])
+    nelecb = np.trace (dm1s[1])
+    n = neleca+nelecb
+    m = (neleca-nelecb)/2.
+    ss = m*m + (n/2.) - np.einsum ('pqqp->pq', dm2s[1]).sum ()
+    _print_fn ('<N>,<Sz>,<S^2> = %f, %f, %f', n, m, ss)
+
 def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
             tol=1e-8, gtol=1e-6, max_cycle=None, 
             orbsym=None, wfnsym=None, ecore=0, opt = True, **kwargs):
-    if max_cycle is None:
-        max_cycle = GLOBAL_MAX_CYCLE if GLOBAL_MAX_CYCLE is not None else 15000
     if norb_f is None: norb_f = getattr (fci, 'norb_f', [norb])
     if ci0_f is None: ci0_f = fci.get_init_guess (norb, nelec, norb_f, h1, h2)
-    verbose = kwargs.get ('verbose', getattr (fci, 'verbose', 0))
-
-    if isinstance (verbose, lib.logger.Logger):
-        log = verbose
-        verbose = log.verbose
-    else:
-        log = lib.logger.new_logger (fci, verbose)
 
     frozen = getattr (fci, 'frozen', None)
-    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec,
-        log=log, frozen=frozen))
+    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec, frozen=frozen))
     assert (psi.check_ci0_constr)
+    
     if not opt:
         return psi 
     
+
+    if max_cycle is None:
+        max_cycle = GLOBAL_MAX_CYCLE if GLOBAL_MAX_CYCLE is not None else 15000
     psi_options = {'gtol':     gtol,
-                   'maxiter':  max_cycle,
-                   'disp':     verbose>lib.logger.DEBUG}
-    log.info ('LASCI object has %d degrees of freedom', psi.nvar)
+                   'maxiter':  max_cycle}
+    
+
     h = [ecore, h1, h2]
     psi_callback = psi.get_solver_callback (h)
     res = optimize.minimize (psi.e_de, psi.x, args=(h,), method='BFGS',
         jac=True, callback=psi_callback, options=psi_options)
-    fci.converged = res.success
     if not res.success:
         print('Warning: optimization failed, res.message = ', res.message)
 
-     
-    e_tot = psi.energy_tot (res.x, h)
-    ci1 = psi.get_fcivec (res.x)
-    if verbose>=lib.logger.DEBUG:
-        psi.uop.print_tab (_print_fn=log.debug)
-        psi.print_x (res.x, h, _print_fn=log.debug)
-    if verbose>=lib.logger.INFO:
-        dm1s, dm2s = fci.make_rdm12s (ci1, norb, nelec)
-        dm1s = np.stack (dm1s, axis=0)
-        dm2s = np.stack (dm2s, axis=0)
-        for ix, j in enumerate (np.cumsum (norb_f)):
-            i = j - norb_f[ix]
-            log.info ('Fragment %d local quantum numbers', ix)
-            _n_m_s (dm1s[:,i:j,i:j], dm2s[:,i:j,i:j,i:j,i:j], _print_fn=log.info)
-        log.info ('Whole system quantum numbers')
-        _n_m_s (dm1s, dm2s, _print_fn=log.info)
     psi.x = res.x
     psi.converged = res.success
     psi.finalize_()
-    fci.psi = psi
-    return e_tot, ci1, psi
+    return psi
 
 
 
-def get_nn_excitations(a_idxs_selected, i_idxs_selected, config):
+def get_nn_excitations(a_idxs_selected, i_idxs_selected, all_g, config):
     nn_g = []
     a_idxs_selected_nn = []
     i_idxs_selected_nn = []
@@ -178,7 +162,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
             rand_xcc_var /= np.linalg.norm(rand_xcc_var)
             psi.x[psi.nconstr:psi.uop.ngen_uniq + psi.nconstr] = rand_xcc_var 
         elif(config['init_method'] == 'uscc_opt'):
-            e_tot_k, ci1, psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
+            psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
                                          , nelec = mc_uscc.nelecas,  ecore = e_core)
         else:
             raise ValueError("init_method must be 'random' or 'uscc_opt'")
@@ -210,7 +194,7 @@ def test(mol_config, test_config,las, mc_uscc, mol):
     
     nn_g = []
     if(test_config['nn']):
-        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, config)
+        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, config)
         if test_config['grad_test']:
             result['nn_g'] = nn_g
 
@@ -310,26 +294,25 @@ noci_test_0001['epsilon'] = 0.0001
 
 tests = [
     noci_test_01,
-    noci_test_001,
-    noci_test_0001
+    # noci_test_001,
+    # noci_test_0001
 ]
 
 results, ref_energy, las_energy = batch_test(h6_sto3g, tests)    
 
 for result in results:
-    print(f"Experiment {result['name']}:")
     print(f"Total excitations: {result['tot_excitation_count']}")
-    print(f"NN excitations: {result['excitation_count_nn']}")
+    # print(f"NN excitations: {result['excitation_count_nn']}")
     print(f"Reference energy: {ref_energy}")
     print(f"MC-LAS energy: {las_energy}")
     if 'las_uscc_eng' in result:
-        print(f"MC-USCC energy: {result['las_uscc_eng']}")
+        print(f"MC-USCC energy: {result['las_uscc_eng']:.12f}")
     if 'las_uscc_noci_eng' in result:
-        print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']}")
+        print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.12f}")
     if 'tot_g' in result:
-        print(f"Total gradient norm: {np.linalg.norm(result['tot_g'])}")
+        print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.12f}")
     if 'nn_g' in result:
-        print(f"NN gradient norm: {np.linalg.norm(result['nn_g'])}")
+        print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.12f}")
     print("\n")
 
 
@@ -379,13 +362,13 @@ for result in results:
 
 # dump_dist_test_result(dist_test(c10_sto3g))
 
-def circle_adj(n):
-    return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
+# def circle_adj(n):
+#     return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
 
 
-h10_circle_adj = circle_adj(5)
-with open('circle/H10.xyz', 'r', encoding='utf-8') as f:
-    h10_circle_xyz = f.read()
+# h10_circle_adj = circle_adj(5)
+# with open('circle/H10.xyz', 'r', encoding='utf-8') as f:
+#     h10_circle_xyz = f.read()
 
 # h10_circle_sto3g : Config = {
 #     'name': 'H10_CIRCLE_STO3G',
