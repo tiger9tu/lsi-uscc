@@ -58,11 +58,12 @@ class TestConfig(TypedDict):
     adj: List[List[int]]
     frag_spin_orb: Dict[int, Any]
     # non-orthogonal configuration interaction parameters
-    nc: int # the excitations will be split into nci parts, we do for different nci
     init_method: str # 'random' or 'uscc_opt'
+    max_nx: int  # max number of excitations per configuration
+    min_nc: int
     # test choices
-    grad_test: bool = False
-    noci_test: bool = False  
+    grad_test: bool
+    noci_test: bool  
 
 class TestResult(TypedDict):
     tot_g : List[float]
@@ -81,14 +82,6 @@ def get_Sij_Hij(psi_i, psi_j, h):
     Hij = uci.conj ().dot (hucj)
     return Sij, Hij
 
-
-def _n_m_s (dm1s, dm2s, _print_fn=print):
-    neleca = np.trace (dm1s[0])
-    nelecb = np.trace (dm1s[1])
-    n = neleca+nelecb
-    m = (neleca-nelecb)/2.
-    ss = m*m + (n/2.) - np.einsum ('pqqp->pq', dm2s[1]).sum ()
-    _print_fn ('<N>,<Sz>,<S^2> = %f, %f, %f', n, m, ss)
 
 def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
             tol=1e-8, gtol=1e-6, max_cycle=None, 
@@ -112,6 +105,7 @@ def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
 
     h = [ecore, h1, h2]
     psi_callback = psi.get_solver_callback (h)
+    
     res = optimize.minimize (psi.e_de, psi.x, args=(h,), method='BFGS',
         jac=True, callback=psi_callback, options=psi_options)
     if not res.success:
@@ -141,8 +135,11 @@ def get_nn_excitations(a_idxs_selected, i_idxs_selected, all_g, config):
 
 
 def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
-    
-    nc = config['nc']
+
+    nx = len(a_idxs_selected)
+    nc = nx // config['max_nx']
+    if nc < config['min_nc']:
+        nc = config['min_nc']
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
     a_splits = np.array_split(a_idxs_selected, nc - 1)
@@ -203,7 +200,6 @@ def test(mol_config, test_config,las, mc_uscc, mol):
 
     #Computing energy through the LAS-UCC kernel using selected excitations
     #==========================================================================================
-
     
     a_idxs_selected = None
     i_idxs_selected = None
@@ -258,7 +254,6 @@ def batch_test(mol_config, test_configs):
 
 
 
-
 H6xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
 H      1.000000000000   0.000000000000   0.000000000000
 H      0.273746762116   2.195450598147   0.100000000000
@@ -277,10 +272,88 @@ h6_sto3g : MolConfig = {
     'frag_atom_list': ((0, 1), (2, 3), (4, 5)),
 }
 
+h6_631g : MolConfig = {
+    'name': 'H6_631G',
+    'xyz': H6xyz,
+    'basis': '6-31g',
+    'ncas': [2, 2, 2],
+    'nelecas': [2, 2, 2],
+    'spinsub': [1, 1, 1],
+    'frag_atom_list': ((0, 1), (2, 3), (4, 5)),
+}
+
+data_dir = '/home/jinx/repo/qc/las_uccsd_data'
+
+with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
+    stil90xyz = f.read()
+
+stil_sto3g_90 : MolConfig = {
+    'name': 'STIL_STO3G_90',
+    'xyz': stil90xyz,
+    'basis': 'sto-3g',
+    'ncas': [4,2,4],
+    'nelecas': [4,2,4],
+    'spinsub': [1, 1, 1],
+    'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+    # 'frag_spin_orb': {
+    #     0: (0, 1, 2, 3,10,11,12,13),
+    #     1: (4,5,14,15),
+    #     2: (6,7,8,9,16,17,18,19)
+    # }
+}
+
+with open(data_dir + '/polyenes/geometries/c10.xyz', 'r', encoding='utf-8') as f:
+    c10xyz = f.read()
+
+c10_sto3g : MolConfig = {
+    'name': 'C10_STO3G',
+    'xyz': c10xyz,
+    'basis': 'sto-3g',
+    'ncas': (2,2,2,2,2),
+    'nelecas': (2,2,2,2,2),
+    'spinsub': (1,1,1,1,1),
+    'frag_atom_list': [[0,2], [10,12], [18,19], [13,11], [3,1]],
+    # 'frag_spin_orb': {
+    #     0: (0,1,10,11),
+    #     1: (2,3,12,13),
+    #     2: (4,5,14,15),
+    #     3: (6,7,16,17),
+    #     4: (8,9,18,19)
+    # }
+}
+
+def circle_adj(n):
+    return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
+
+h10_circle_adj = circle_adj(5)
+with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
+    h10_circle_xyz = f.read()
+
+h10_circle_sto3g : MolConfig = {
+    'name': 'H10_CIRCLE_STO3G',
+    'xyz': h10_circle_xyz,
+    'adj': h10_circle_adj,
+    'basis': 'sto-3g',
+    'ncas': (2,2,2,2,2),
+    'nelecas': (2,2,2,2,2),
+    'spinsub': (1,1,1,1,1),
+    'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
+    # 'frag_spin_orb': {
+    #     0: (0,1,10,11),
+    #     1: (2,3,12,13),
+    #     2: (4,5,14,15),
+    #     3: (6,7,16,17),
+    #     4: (8,9,18,19)
+    # },
+}
+
+mol_configs = [h6_sto3g, h6_631g, stil_sto3g_90, c10_sto3g, h10_circle_sto3g]
+
 noci_test_01 : TestConfig = {
     'epsilon': 0.01,
     'nn': False,
-    'nc': 3,
+    'max_nx': 10000,
+    'min_nc': 3,
     'init_method': 'uscc_opt',
     'grad_test': False,
     'noci_test': True
@@ -294,128 +367,41 @@ noci_test_0001['epsilon'] = 0.0001
 
 tests = [
     noci_test_01,
-    # noci_test_001,
+    noci_test_001,
     # noci_test_0001
 ]
 
-results, ref_energy, las_energy = batch_test(h6_sto3g, tests)    
 
-for result in results:
-    print(f"Total excitations: {result['tot_excitation_count']}")
-    # print(f"NN excitations: {result['excitation_count_nn']}")
+for mol_conf in mol_configs:
+    print(f"Molecule {mol_conf['name']}: ")
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, tests)
+    
     print(f"Reference energy: {ref_energy}")
     print(f"MC-LAS energy: {las_energy}")
-    if 'las_uscc_eng' in result:
-        print(f"MC-USCC energy: {result['las_uscc_eng']:.12f}")
-    if 'las_uscc_noci_eng' in result:
-        print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.12f}")
-    if 'tot_g' in result:
-        print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.12f}")
-    if 'nn_g' in result:
-        print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.12f}")
-    print("\n")
+    for result in mol_results:
+        print(f"Total excitations: {result['tot_excitation_count']}")
+        # print(f"NN excitations: {result['excitation_count_nn']}")
+
+        if 'las_uscc_eng' in result:
+            print(f"MC-USCC energy: {result['las_uscc_eng']:.12f}")
+        if 'las_uscc_noci_eng' in result:
+            print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.12f}")
+        if 'tot_g' in result:
+            print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.12f}")
+        if 'nn_g' in result:
+            print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.12f}")
+        print("\n")
+    
+    print("\n\n")
 
 
 
 
 
-# with open('/home/tuy/las_uccsd_data/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
-#     stil90xyz = f.read()
-
-# stil_sto3g_90 : Config = {
-#     'name': 'STIL_STO3G_90',
-#     'xyz': stil90xyz,
-#     'basis': 'sto-3g',
-#     'ncas': [4,2,4],
-#     'nelecas': [4,2,4],
-#     'spinsub': [1, 1, 1],
-#     'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
-#     'frag_spin_orb': {
-#         0: (0, 1, 2, 3,10,11,12,13),
-#         1: (4,5,14,15),
-#         2: (6,7,8,9,16,17,18,19)
-#     }
-# }
-
-# dump_dist_test_result(dist_test(stil_sto3g_90))
-
-
-# with open('/home/tuy/las_uccsd_data/polyenes/geometries/c10.xyz', 'r', encoding='utf-8') as f:
-#     c10xyz = f.read()
-
-# c10_sto3g : Config = {
-#     'name': 'C10_STO3G',
-#     'xyz': c10xyz,
-#     'basis': 'sto-3g',
-#     'ncas': (2,2,2,2,2),
-#     'nelecas': (2,2,2,2,2),
-#     'spinsub': (1,1,1,1,1),
-#     'frag_atom_list': [[0,2], [10,12], [18,19], [13,11], [3,1]],
-#     'frag_spin_orb': {
-#         0: (0,1,10,11),
-#         1: (2,3,12,13),
-#         2: (4,5,14,15),
-#         3: (6,7,16,17),
-#         4: (8,9,18,19)
-#     }
-# }
-
-# dump_dist_test_result(dist_test(c10_sto3g))
-
-# def circle_adj(n):
-#     return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
-
-
-# h10_circle_adj = circle_adj(5)
-# with open('circle/H10.xyz', 'r', encoding='utf-8') as f:
-#     h10_circle_xyz = f.read()
-
-# h10_circle_sto3g : Config = {
-#     'name': 'H10_CIRCLE_STO3G',
-#     'xyz': h10_circle_xyz,
-#     'adj': h10_circle_adj,
-#     'basis': 'sto-3g',
-#     'ncas': (2,2,2,2,2),
-#     'nelecas': (2,2,2,2,2),
-#     'spinsub': (1,1,1,1,1),
-#     'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
-#     'frag_spin_orb': {
-#         0: (0,1,10,11),
-#         1: (2,3,12,13),
-#         2: (4,5,14,15),
-#         3: (6,7,16,17),
-#         4: (8,9,18,19)
-#     },
-#     'epsilon' : 0.0001
-# }
 
 
 
-# print_eng_test_results(eng_test(h10_circle_sto3g))
 
-# h10_circle_sto3g : NociConfig = {
-#     'name': 'H10_CIRCLE_STO3G',
-#     'xyz': h10_circle_xyz,
-#     'adj': h10_circle_adj,
-#     'basis': 'sto-3g',
-#     'ncas': (2,2,2,2,2),
-#     'nelecas': (2,2,2,2,2),
-#     'spinsub': (1,1,1,1,1),
-#     'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
-#     'frag_spin_orb': {
-#         0: (0,1,10,11),
-#         1: (2,3,12,13),
-#         2: (4,5,14,15),
-#         3: (6,7,16,17),
-#         4: (8,9,18,19)
-#     },
-#     'epsilon' : 0.0001,
-#     'ncis': [2, 3, 4, 5, 6],
-#     'init_method': 'random'  # or 'random'
-# }
-
-# noci_energies = noci_eng_test(h10_circle_sto3g)
-# print("NOCI energies for different nci values:", noci_energies)
 
 
 
