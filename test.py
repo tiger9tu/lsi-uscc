@@ -302,7 +302,7 @@ h6_631g : MolConfig = {
 
 }
 
-data_dir = '/home/jinx/repo/qc/las_uccsd_data'
+data_dir = '/home/ndtm/repo/qchem/las_uccsd_data'
 
 with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
     stil90xyz = f.read()
