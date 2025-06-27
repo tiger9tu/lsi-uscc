@@ -50,13 +50,13 @@ class MolConfig(TypedDict):
     nelecas: List[int]
     spinsub: List[int]
     frag_atom_list: Any  # Can be List or Tuple depending on usage
+    frag_spin_orb: Any
+    adj: List[List[int]]
 
 class TestConfig(TypedDict):
     epsilon: float
     # nearest neighbor parameters
     nn: bool
-    adj: List[List[int]]
-    frag_spin_orb: Dict[int, Any]
     # non-orthogonal configuration interaction parameters
     init_method: str # 'random' or 'uscc_opt'
     max_nx: int  # max number of excitations per configuration
@@ -180,7 +180,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
 
 
 def test(mol_config, test_config,las, mc_uscc, mol):
-    result = TestResult()
+    result = {}
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
     if test_config['grad_test']:
@@ -191,7 +191,7 @@ def test(mol_config, test_config,las, mc_uscc, mol):
     
     nn_g = []
     if(test_config['nn']):
-        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, config)
+        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, mol_config)
         if test_config['grad_test']:
             result['nn_g'] = nn_g
 
@@ -212,7 +212,7 @@ def test(mol_config, test_config,las, mc_uscc, mol):
         i_idxs_selected = i_idxs_selected_all
         
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-    mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
+    # mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     mc_uscc.kernel()
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
@@ -253,6 +253,13 @@ def batch_test(mol_config, test_configs):
     return results, ref.e_tot, las.e_tot
 
 
+def empty_adj(n):
+    return [[0 for _ in range(n)] for _ in range(n)]
+
+def circle_adj(n):
+    return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
+
+
 
 H6xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
 H      1.000000000000   0.000000000000   0.000000000000
@@ -270,6 +277,12 @@ h6_sto3g : MolConfig = {
     'nelecas': [2, 2, 2],
     'spinsub': [1, 1, 1],
     'frag_atom_list': ((0, 1), (2, 3), (4, 5)),
+    'frag_spin_orb': {
+        0: (0, 1, 6, 7),
+        1: (2, 3, 8, 9),
+        2: (4, 5, 10, 11)
+    },
+    'adj': empty_adj(3),
 }
 
 h6_631g : MolConfig = {
@@ -280,6 +293,13 @@ h6_631g : MolConfig = {
     'nelecas': [2, 2, 2],
     'spinsub': [1, 1, 1],
     'frag_atom_list': ((0, 1), (2, 3), (4, 5)),
+    'frag_spin_orb': {
+        0: (0, 1, 6, 7),
+        1: (2, 3, 8, 9),
+        2: (4, 5, 10, 11)
+    },
+    'adj': empty_adj(3),
+
 }
 
 data_dir = '/home/jinx/repo/qc/las_uccsd_data'
@@ -295,11 +315,12 @@ stil_sto3g_90 : MolConfig = {
     'nelecas': [4,2,4],
     'spinsub': [1, 1, 1],
     'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
-    # 'frag_spin_orb': {
-    #     0: (0, 1, 2, 3,10,11,12,13),
-    #     1: (4,5,14,15),
-    #     2: (6,7,8,9,16,17,18,19)
-    # }
+    'frag_spin_orb': {
+        0: (0, 1, 2, 3,10,11,12,13),
+        1: (4,5,14,15),
+        2: (6,7,8,9,16,17,18,19)
+    },
+    'adj': empty_adj(3),
 }
 
 with open(data_dir + '/polyenes/geometries/c10.xyz', 'r', encoding='utf-8') as f:
@@ -309,42 +330,39 @@ c10_sto3g : MolConfig = {
     'name': 'C10_STO3G',
     'xyz': c10xyz,
     'basis': 'sto-3g',
-    'ncas': (2,2,2,2,2),
-    'nelecas': (2,2,2,2,2),
-    'spinsub': (1,1,1,1,1),
+    'ncas': [2,2,2,2,2],
+    'nelecas': [2,2,2,2,2],
+    'spinsub': [1,1,1,1,1],
     'frag_atom_list': [[0,2], [10,12], [18,19], [13,11], [3,1]],
-    # 'frag_spin_orb': {
-    #     0: (0,1,10,11),
-    #     1: (2,3,12,13),
-    #     2: (4,5,14,15),
-    #     3: (6,7,16,17),
-    #     4: (8,9,18,19)
-    # }
+    'frag_spin_orb': {
+        0: (0,1,10,11),
+        1: (2,3,12,13),
+        2: (4,5,14,15),
+        3: (6,7,16,17),
+        4: (8,9,18,19)
+    },
+    'adj': circle_adj(5),
 }
 
-def circle_adj(n):
-    return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
-
-h10_circle_adj = circle_adj(5)
 with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
     h10_circle_xyz = f.read()
 
 h10_circle_sto3g : MolConfig = {
     'name': 'H10_CIRCLE_STO3G',
     'xyz': h10_circle_xyz,
-    'adj': h10_circle_adj,
     'basis': 'sto-3g',
-    'ncas': (2,2,2,2,2),
-    'nelecas': (2,2,2,2,2),
-    'spinsub': (1,1,1,1,1),
+    'ncas': [2,2,2,2,2],
+    'nelecas': [2,2,2,2,2],
+    'spinsub': [1,1,1,1,1],
     'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
-    # 'frag_spin_orb': {
-    #     0: (0,1,10,11),
-    #     1: (2,3,12,13),
-    #     2: (4,5,14,15),
-    #     3: (6,7,16,17),
-    #     4: (8,9,18,19)
-    # },
+    'frag_spin_orb': {
+        0: (0,1,10,11),
+        1: (2,3,12,13),
+        2: (4,5,14,15),
+        3: (6,7,16,17),
+        4: (8,9,18,19)
+    },
+    'adj': circle_adj(5),
 }
 
 mol_configs = [h6_sto3g, h6_631g, stil_sto3g_90, c10_sto3g, h10_circle_sto3g]
