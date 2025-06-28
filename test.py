@@ -138,6 +138,11 @@ def get_nn_excitations(a_idxs_selected, i_idxs_selected, all_g, config):
     return nn_g, a_idxs_selected_nn, i_idxs_selected_nn
 
 
+def arr_split(arr, n):
+    """Split an array into n nearly equal parts."""
+    k, m = divmod(len(arr), n)
+    return list(arr[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
 
 def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
 
@@ -147,8 +152,9 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
         nc = config['min_nc']
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
-    a_splits = np.array_split(a_idxs_selected, nc - 1)
-    i_splits = np.array_split(i_idxs_selected, nc - 1)
+    print("a_idxs_selected = ", a_idxs_selected)
+    a_splits = arr_split(a_idxs_selected, nc - 1)
+    i_splits = arr_split(i_idxs_selected, nc - 1)
     a_splits.append(np.array([], dtype=int)) 
     i_splits.append(np.array([], dtype=int))  
     las_ucc_trial_cis = []
@@ -362,21 +368,21 @@ if __name__ == "__main__":
         'adj': circle_adj(2), # not sure about this
     }
 
-    # c6_sto3g : MolConfig = {
-    #     'name': 'C6_STO3G',
-    #     'xyz': c6xyz,
-    #     'basis': 'sto-3g',
-    #     'ncas': [2,2,2],
-    #     'nelecas': [2,2,2],
-    #     'spinsub': [1,1,1],
-    #     # 'frag_atom_list': [[0,2], [10,12], [18,19], [13,11], [3,1]], ?? unknown
-    #     'frag_spin_orb': {
-    #         0: (0,1,6,7),
-    #         1: (2,3,8,9),
-    #         2: (4,5,10,11),
-    #     },
-    #     'adj': circle_adj(3),
-    # }
+    c6_sto3g : MolConfig = {
+        'name': 'C6_STO3G',
+        'xyz': c6xyz,
+        'basis': 'sto-3g',
+        'ncas': [2,2,2],
+        'nelecas': [2,2,2],
+        'spinsub': [1,1,1],
+        'frag_atom_list': [[0,2], [10,12], [3,1]], # not sure about this
+        'frag_spin_orb': {
+            0: (0,1,6,7),
+            1: (2,3,8,9),
+            2: (4,5,10,11),
+        },
+        'adj': circle_adj(3),
+    }
 
     c10_sto3g : MolConfig = {
         'name': 'C10_STO3G',
@@ -415,7 +421,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c4_sto3g, h10_circle_sto3g, h6_sto3g, h6_631g,stil_sto3g_90, c10_sto3g ]
+    mol_configs = [c6_sto3g, h10_circle_sto3g, h6_sto3g, h6_631g,stil_sto3g_90, c10_sto3g ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -434,7 +440,7 @@ if __name__ == "__main__":
     noci_test_0001['epsilon'] = 0.0001
 
     tests = [
-        noci_test_01,
+        # noci_test_01,
         noci_test_001,
         # noci_test_0001
     ]
