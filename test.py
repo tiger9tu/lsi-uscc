@@ -143,7 +143,7 @@ def arr_split(arr, n):
     k, m = divmod(len(arr), n)
     return list(arr[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
 
-def print_matrix(mat, 12):
+def print_matrix(mat):
     for row in mat:
         print("  ".join(f"{x:.12f}" for x in row))
 
