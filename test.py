@@ -285,7 +285,7 @@ if __name__ == "__main__":
     H      1.506140937609   3.988021397347  -0.049334760036
     '''
 
-    data_dir = '/home/ndtm/repo/qchem/las_uccsd_data'
+    data_dir = '/home/tuy/repo/las_uccsd_data'
 
     with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
@@ -421,7 +421,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c6_sto3g, h10_circle_sto3g, h6_sto3g, h6_631g,stil_sto3g_90, c10_sto3g ]
+    mol_configs = [c6_sto3g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -440,9 +440,9 @@ if __name__ == "__main__":
     noci_test_0001['epsilon'] = 0.0001
 
     tests = [
-        # noci_test_01,
+        noci_test_01,
         noci_test_001,
-        # noci_test_0001
+        noci_test_0001
     ]
 
 
