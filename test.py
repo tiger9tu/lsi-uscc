@@ -408,6 +408,10 @@ if __name__ == "__main__":
         'adj': circle_adj(3),
     }
 
+    c6_631g = copy.deepcopy(c6_sto3g)
+    c6_631g['name'] = 'C6_631G'
+    c6_631g['basis'] = '6-31g'
+
     c10_sto3g : MolConfig = {
         'name': 'C10_STO3G',
         'xyz': c10xyz,
@@ -445,7 +449,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h8_sto3g, h8_631g, c4_sto3g, c4_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
+    mol_configs = [h8_sto3g, h8_631g, c4_sto3g, c4_631g, c6_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
