@@ -94,10 +94,10 @@ def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
     assert (psi.check_ci0_constr)
 
     # debug
-    print("len(psi.x) = ", len(psi.x))
-    print("len(psi.uop.ngen_uniq) = ", psi.uop.ngen_uniq)
-    print("sum ([c.size for c in psi.ci_f] = ", sum ([c.size for c in psi.ci_f]))
-     
+    #print("len(psi.x) = ", len(psi.x))
+    #print("len(psi.uop.ngen_uniq) = ", psi.uop.ngen_uniq)
+    #print("sum ([c.size for c in psi.ci_f] = ", sum ([c.size for c in psi.ci_f]))
+    
     if not opt:
         return psi 
     
@@ -143,6 +143,9 @@ def arr_split(arr, n):
     k, m = divmod(len(arr), n)
     return list(arr[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
 
+def print_matrix(mat, 12):
+    for row in mat:
+        print("  ".join(f"{x:.12f}" for x in row))
 
 def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
 
@@ -152,7 +155,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
         nc = config['min_nc']
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
-    print("a_idxs_selected = ", a_idxs_selected)
+    #print("a_idxs_selected = ", a_idxs_selected)
     a_splits = arr_split(a_idxs_selected, nc - 1)
     i_splits = arr_split(i_idxs_selected, nc - 1)
     a_splits.append(np.array([], dtype=int)) 
@@ -186,9 +189,9 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
             S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[i], las_ucc_trial_cis[j], h)
 
     print("S matrix:")
-    print(S)
+    print_matrix(S)
     print("H matrix:")
-    print(H)
+    print_matrix(H)
     eigvals, eigvecs = eigh(H, S)
     return eigvals[0]  # Take the lowest eigenvalue as the energy
 
@@ -385,6 +388,10 @@ if __name__ == "__main__":
         'adj': circle_adj(2), # not sure about this
     }
 
+    c4_631g = copy.deepcopy(c4_sto3g)
+    c4_631g['name'] = 'C4_631G'
+    c4_631g['basis'] = '6-31g'
+
     c6_sto3g : MolConfig = {
         'name': 'C6_STO3G',
         'xyz': c6xyz,
@@ -438,7 +445,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c6_sto3g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
+    mol_configs = [h8_sto3g, h8_631g, c4_sto3g, c4_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
