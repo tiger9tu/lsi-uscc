@@ -478,8 +478,8 @@ if __name__ == "__main__":
         print(f"Molecule {mol_conf['name']}: ")
         mol_results, ref_energy, las_energy = batch_test(mol_conf, tests)
         
-        print(f"Reference energy: {ref_energy.17f}")
-        print(f"MC-LAS energy: {las_energy.17f}")
+        print(f"Reference energy: {ref_energy:.17f}")
+        print(f"MC-LAS energy: {las_energy:.17f}")
         for result in mol_results:
             print(f"Total excitations: {result['tot_excitation_count']}")
             # print(f"NN excitations: {result['excitation_count_nn']}")
