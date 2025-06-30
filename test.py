@@ -85,12 +85,12 @@ def get_Sij_Hij(psi_i, psi_j, h):
 
 def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
             tol=1e-8, gtol=1e-6, max_cycle=None, 
-            orbsym=None, wfnsym=None, ecore=0, opt = True, **kwargs):
+            orbsym=None, wfnsym=None, ecore=0, opt = True, frozen = None, **kwargs):
     if norb_f is None: norb_f = getattr (fci, 'norb_f', [norb])
     
     if ci0_f is None: ci0_f = fci.get_init_guess (norb, nelec, norb_f, h1, h2)
 
-    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec, frozen=None))
+    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec, frozen=frozen))
     assert (psi.check_ci0_constr)
 
     # debug
@@ -145,7 +145,7 @@ def arr_split(arr, n):
 
 def print_matrix(mat):
     for row in mat:
-        print("  ".join(f"{x:.12f}" for x in row))
+        print("  ".join(f"{x:.17f}" for x in row))
 
 def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
 
@@ -167,14 +167,14 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
         psi = None
         if(config['init_method'] == 'random'):
             psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
-                               , nelec = mc_uscc.nelecas,  ecore = e_core, opt = False)
+                               , nelec = mc_uscc.nelecas,  ecore = e_core, opt = False, frozen= config['frozen'])
             len_psi_xcc = psi.uop.ngen_uniq
             rand_xcc_var = np.random.rand(len_psi_xcc)
             rand_xcc_var /= np.linalg.norm(rand_xcc_var)
             psi.x[psi.nconstr:psi.uop.ngen_uniq + psi.nconstr] = rand_xcc_var 
         elif(config['init_method'] == 'uscc_opt'):
             psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
-                                         , nelec = mc_uscc.nelecas,  ecore = e_core)
+                                         , nelec = mc_uscc.nelecas,  ecore = e_core, opt = true, frozen= config['frozen'])
         else:
             raise ValueError("init_method must be 'random' or 'uscc_opt'")
       
@@ -232,6 +232,7 @@ def test(mol_config, test_config,las, mc_uscc, mol):
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
     mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     # easily hit the maximal memory limit
+    mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
     mc_uscc.kernel()
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
@@ -449,7 +450,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c4_sto3g, c4_631g, c6_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
+    mol_configs = [h6_sto3g, h6_631g, c4_sto3g, c4_631g, c6_sto3g, c6_631g, h8_sto3g, h8_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -457,6 +458,7 @@ if __name__ == "__main__":
         'max_nx': 10000,
         'min_nc': 3,
         'init_method': 'uscc_opt',
+        'frozen': 'CI',
         'grad_test': False,
         'noci_test': True
     }
