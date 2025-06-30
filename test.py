@@ -174,7 +174,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
             psi.x[psi.nconstr:psi.uop.ngen_uniq + psi.nconstr] = rand_xcc_var 
         elif(config['init_method'] == 'uscc_opt'):
             psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
-                                         , nelec = mc_uscc.nelecas,  ecore = e_core, opt = true, frozen= config['frozen'])
+                                         , nelec = mc_uscc.nelecas,  ecore = e_core, opt = True, frozen= config['frozen'])
         else:
             raise ValueError("init_method must be 'random' or 'uscc_opt'")
       
