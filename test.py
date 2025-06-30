@@ -478,20 +478,20 @@ if __name__ == "__main__":
         print(f"Molecule {mol_conf['name']}: ")
         mol_results, ref_energy, las_energy = batch_test(mol_conf, tests)
         
-        print(f"Reference energy: {ref_energy}")
-        print(f"MC-LAS energy: {las_energy}")
+        print(f"Reference energy: {ref_energy.17f}")
+        print(f"MC-LAS energy: {las_energy.17f}")
         for result in mol_results:
             print(f"Total excitations: {result['tot_excitation_count']}")
             # print(f"NN excitations: {result['excitation_count_nn']}")
 
             if 'las_uscc_eng' in result:
-                print(f"MC-USCC energy: {result['las_uscc_eng']:.12f}")
+                print(f"MC-USCC energy: {result['las_uscc_eng']:.17f}")
             if 'las_uscc_noci_eng' in result:
-                print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.12f}")
+                print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.17f}")
             if 'tot_g' in result:
-                print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.12f}")
+                print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
             if 'nn_g' in result:
-                print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.12f}")
+                print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
             print("\n")
         
         print("\n\n")
