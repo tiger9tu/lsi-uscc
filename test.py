@@ -38,7 +38,7 @@ def is_nn(idxes, config):
             print("Warning: belongs to no fragments, orb = ", orb)
     return len(fragments) <= 2 and config['adj'][fragments[0]][fragments[1]] == 1
 
-GLOBAL_MAX_CYCLE = 15000 # debug 
+GLOBAL_MAX_CYCLE = 20000 # debug 
 
 
 class MolConfig(TypedDict):
@@ -265,6 +265,7 @@ def batch_test(mol_config, test_configs):
 
     mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
     mc_uscc.mo_coeff = las.mo_coeff
+    
     for test_config in test_configs:
         
         result = test(mol_config, test_config,las, mc_uscc, mol)
@@ -450,7 +451,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h6_sto3g, h6_631g, c4_sto3g, c4_631g, c6_sto3g, c6_631g, h8_sto3g, h8_631g, h10_circle_sto3g, stil_sto3g_90, c10_sto3g ]
+    mol_configs = [c4_631g, c10_sto3g,  h6_sto3g, h6_631g, c4_sto3g,  c6_sto3g, c6_631g, h8_sto3g, h8_631g, h10_circle_sto3g, ]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -472,7 +473,7 @@ if __name__ == "__main__":
     tests = [
         noci_test_01,
         noci_test_001,
-        noci_test_0001
+#        noci_test_0001
     ]
 
 
