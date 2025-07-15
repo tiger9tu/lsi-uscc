@@ -16,6 +16,8 @@ from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
 
+VERBOSE = 1
+
 def flatten(seq: Iterable) -> list:
     result = []
     for item in seq:
@@ -38,7 +40,7 @@ def is_nn(idxes, config):
             print("Warning: belongs to no fragments, orb = ", orb)
     return len(fragments) <= 2 and config['adj'][fragments[0]][fragments[1]] == 1
 
-GLOBAL_MAX_CYCLE = 20000 # debug 
+GLOBAL_MAX_CYCLE = 15000 # debug 
 
 
 class MolConfig(TypedDict):
@@ -58,20 +60,14 @@ class TestConfig(TypedDict):
     # nearest neighbor parameters
     nn: bool
     # non-orthogonal configuration interaction parameters
-    init_method: str # 'random' or 'uscc_opt'
+    init_method: str # 'random' or 'uscc_opt' or 'load x'
     max_nx: int  # max number of excitations per configuration
     min_nc: int
     # test choices
     grad_test: bool
     noci_test: bool  
+    frozen: str
 
-class TestResult(TypedDict):
-    tot_g : List[float]
-    nn_g : List[float]
-    tot_excitation_count: int
-    excitation_count_nn: int
-    las_uscc_energy: float
-    las_uscc_noci_energy: float
 
 def get_Sij_Hij(psi_i, psi_j, h):
     ucj, hucj = psi_j.hc_x (psi_j.x, h)[1:3]
@@ -81,46 +77,6 @@ def get_Sij_Hij(psi_i, psi_j, h):
     Sij = uci.conj ().dot (ucj)
     Hij = uci.conj ().dot (hucj)
     return Sij, Hij
-
-
-def psi_kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
-            tol=1e-8, gtol=1e-6, max_cycle=None, 
-            orbsym=None, wfnsym=None, ecore=0, opt = True, frozen = None, **kwargs):
-    if norb_f is None: norb_f = getattr (fci, 'norb_f', [norb])
-    
-    if ci0_f is None: ci0_f = fci.get_init_guess (norb, nelec, norb_f, h1, h2)
-
-    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec, frozen=frozen))
-    assert (psi.check_ci0_constr)
-
-    # debug
-    #print("len(psi.x) = ", len(psi.x))
-    #print("len(psi.uop.ngen_uniq) = ", psi.uop.ngen_uniq)
-    #print("sum ([c.size for c in psi.ci_f] = ", sum ([c.size for c in psi.ci_f]))
-    
-    if not opt:
-        return psi 
-    
-
-    if max_cycle is None:
-        max_cycle = GLOBAL_MAX_CYCLE if GLOBAL_MAX_CYCLE is not None else 15000
-    psi_options = {'gtol':     gtol,
-                   'maxiter':  max_cycle}
-    
-
-    h = [ecore, h1, h2]
-    psi_callback = psi.get_solver_callback (h)
-    
-    res = optimize.minimize (psi.e_de, psi.x, args=(h,), method='BFGS',
-        jac=True, callback=psi_callback, options=psi_options)
-    if not res.success:
-        print('Warning: optimization failed, res.message = ', res.message)
-
-    psi.x = res.x
-    psi.converged = res.success
-    psi.finalize_()
-    return psi
-
 
 
 def get_nn_excitations(a_idxs_selected, i_idxs_selected, all_g, config):
@@ -147,38 +103,87 @@ def print_matrix(mat):
     for row in mat:
         print("  ".join(f"{x:.17f}" for x in row))
 
-def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
+def zip_excitations(a_idxs, i_idxs):
+    excitations = []
+    for a, i in zip(a_idxs, i_idxs):
+        excitations.append((tuple(i), tuple(a[::-1])))
+    return excitations
 
+def print_excitations(a_idxs, i_idxs):
+    excitations = zip_excitations(a_idxs, i_idxs)
+    for excitation in excitations:
+        print([[int(x) for x in flatten(excitation)]])
+
+def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, mc_uscc, mf):
     nx = len(a_idxs_selected)
-    nc = nx // config['max_nx']
-    if nc < config['min_nc']:
-        nc = config['min_nc']
+    a_single_idx = []
+    i_single_idx = []
+
+    a_double_idx = []
+    i_double_idx = []
+
+    for idx, (a, i) in enumerate(zip(a_idxs_selected, i_idxs_selected)):
+        if len(a) == 1 and len(i) == 1:
+            a_single_idx.append(a_idxs_selected[idx])
+            i_single_idx.append(i_idxs_selected[idx])
+        elif len(a) == 2 and len(i) == 2:
+            a_double_idx.append(a_idxs_selected[idx])
+            i_double_idx.append(i_idxs_selected[idx])
+        else:
+            print("Warning: unexpected excitation length, a = ", a, " i = ", i)
+
+    if VERBOSE >= 1:
+        print("single excitations count: ", len(a_single_idx)
+              , " double excitations count: ", len(a_double_idx))
+
+    # This split may not keep the single and double count the same for all 
+    # CIs, the last part may have less.
+    nc = nx // test_config['max_nx']
+    if nc < test_config['min_nc']:
+        nc = test_config['min_nc']
+
+    if VERBOSE >= 1:
+        print("Number of CIs: ", nc)
+
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
-    #print("a_idxs_selected = ", a_idxs_selected)
-    a_splits = arr_split(a_idxs_selected, nc - 1)
-    i_splits = arr_split(i_idxs_selected, nc - 1)
-    a_splits.append(np.array([], dtype=int)) 
-    i_splits.append(np.array([], dtype=int))  
-    las_ucc_trial_cis = []
 
+    a_singles_split = arr_split(a_single_idx, nc)
+    i_singles_split = arr_split(i_single_idx, nc)
+    a_doubles_split = arr_split(a_double_idx, nc)
+    i_doubles_split = arr_split(i_double_idx, nc)
+
+    # Combine singles and doubles into one list for each CI
+    a_splits = []
+    i_splits = []
     for i in range(nc):
-        mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_splits[i], i_splits[i])
-        psi = None
-        if(config['init_method'] == 'random'):
-            psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
-                               , nelec = mc_uscc.nelecas,  ecore = e_core, opt = False, frozen= config['frozen'])
-            len_psi_xcc = psi.uop.ngen_uniq
-            rand_xcc_var = np.random.rand(len_psi_xcc)
-            rand_xcc_var /= np.linalg.norm(rand_xcc_var)
-            psi.x[psi.nconstr:psi.uop.ngen_uniq + psi.nconstr] = rand_xcc_var 
-        elif(config['init_method'] == 'uscc_opt'):
-            psi = psi_kernel(fci = mc_uscc.fcisolver, h1 = h1eff, h2 = h2eff, norb = mc_uscc.ncas
-                                         , nelec = mc_uscc.nelecas,  ecore = e_core, opt = True, frozen= config['frozen'])
-        else:
-            raise ValueError("init_method must be 'random' or 'uscc_opt'")
-      
-        las_ucc_trial_cis.append(psi)
+        a_split = a_singles_split[i] + a_doubles_split[i]
+        i_split = i_singles_split[i] + i_doubles_split[i]
+        a_splits.append(a_split)
+        i_splits.append(i_split)
+
+    if VERBOSE >= 2:
+        for i in range(nc):
+            print("CI ", i)
+            print_excitations(a_splits[i], i_splits[i])
+
+
+
+    las_ucc_trial_cis = []
+    for i in range(nc):
+        mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+        mc_uscc_ci.mo_coeff = las.mo_coeff
+        mc_uscc_ci.fcisolver = lasuccsd.FCISolver_USCC(mol, a_splits[i], i_splits[i])
+        print("a_idxs: ", a_splits[i]
+              , " i_idxs: ", i_splits[i])
+        mc_uscc_ci.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
+        # easily hit the maximal memory limit
+        mc_uscc_ci.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
+        mc_uscc_ci.kernel()
+        las_ucc_trial_cis.append(mc_uscc_ci.fcisolver.psi)
+        if VERBOSE >= 1:
+            print("CI ", i, "amplitudes: ", mc_uscc_ci.fcisolver.psi.x)
+        
     
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
@@ -188,16 +193,17 @@ def nci_test(a_idxs_selected, i_idxs_selected, config, mol, mc_uscc):
         for j in range(nc):
             S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[i], las_ucc_trial_cis[j], h)
 
-    print("S matrix:")
-    print_matrix(S)
-    print("H matrix:")
-    print_matrix(H)
+    if VERBOSE >= 1:
+        print("S matrix:")
+        print_matrix(S)
+        print("H matrix:")
+        print_matrix(H)
     eigvals, eigvecs = eigh(H, S)
-    return eigvals[0]  # Take the lowest eigenvalue as the energy
+    return eigvals[0], eigvecs[0]  # Take the lowest eigenvalue as the energy
 
 
 
-def test(mol_config, test_config,las, mc_uscc, mol):
+def test(mol_config, test_config,las, mol, mf):
     result = {}
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
@@ -228,7 +234,13 @@ def test(mol_config, test_config,las, mc_uscc, mol):
     else:
         a_idxs_selected = a_idxs_selected_all
         i_idxs_selected = i_idxs_selected_all
-        
+    
+    if VERBOSE >= 2:
+        print("All selected excitations:")
+        print_excitations(a_idxs_selected, i_idxs_selected)
+
+    mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    mc_uscc.mo_coeff = las.mo_coeff
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
     mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     # easily hit the maximal memory limit
@@ -237,10 +249,14 @@ def test(mol_config, test_config,las, mc_uscc, mol):
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
     
+    if VERBOSE >= 1:
+        print("MC-USCC amplitudes: ", mc_uscc.fcisolver.psi.x)
+
+        
     result['las_uscc_eng'] =  mc_uscc.e_tot 
    
     if test_config['noci_test']:
-        result['las_uscc_noci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol, mc_uscc)
+        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
     
     return result
    
@@ -252,8 +268,22 @@ def batch_test(mol_config, test_configs):
 
     # Initializing the molecule with RHF
     #===================================
-    mol = gto.M(atom=mol_config['xyz'], basis=mol_config['basis'], verbose=0,output=None)
-    mf = scf.RHF(mol).run()
+    symmetry = None
+    charge = None
+    spin = None
+    if 'symmetry' in mol_config:
+        symmetry = mol_config['symmetry']
+    if 'charge' in mol_config:
+        charge = mol_config['charge']
+    if 'spin' in mol_config:
+        spin = mol_config['spin']
+
+    mol = gto.M(atom=mol_config['xyz'], basis=mol_config['basis'], symmetry = symmetry,
+        charge = charge, spin = spin,verbose=0,output=None)
+    if 'HF' in mol_config and mol_config['HF'] == 'ROHF':
+        mf = scf.ROHF(mol).run()
+    else:
+        mf = scf.RHF(mol).run()
 
     # Running LASSCF
     #===================================
@@ -263,15 +293,16 @@ def batch_test(mol_config, test_configs):
     
     ref = mcscf.CASSCF(mf, sum(mol_config['ncas']), sum(mol_config['nelecas'])).run() # = FCI
 
-    mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
-    mc_uscc.mo_coeff = las.mo_coeff
-    
+    # mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    # mc_uscc.mo_coeff = las.mo_coeff
     for test_config in test_configs:
         
-        result = test(mol_config, test_config,las, mc_uscc, mol)
+        result = test(mol_config, test_config, las, mol, mf)
         results.append(result)
     
     return results, ref.e_tot, las.e_tot
+
+
 
 
 def empty_adj(n):
@@ -299,7 +330,7 @@ if __name__ == "__main__":
     H      1.674032054647   5.908472292654  -0.197836732111
     '''
 
-    data_dir = '/home/tuy/repo/las_uccsd_data'
+    data_dir = '/home/jinx/repo/qchem/las_uccsd_data'
 
     with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
@@ -315,6 +346,31 @@ if __name__ == "__main__":
 
     with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
         h10_circle_xyz = f.read()
+
+    with open(data_dir + '/kremer/kremer-geometry.xyz', 'r', encoding='utf-8') as f:
+        kremer_xyz = f.read()
+
+    kremer_basis = {
+        "Cr": "def2-tzvp",
+        "O": "def2-svp",
+        "N": "def2-svp",
+        "C": "def2-svp",
+        "H": "def2-svp",
+    }
+
+    kremer_def2 : MolConfig = {
+        'name' : 'kremer_def2',
+        'HF' : 'ROHF',
+        'xyz' : kremer_xyz,
+        'basis' : kremer_basis,
+        'symmetry' : False,
+        'charge' : 3,
+        'spin' : 6,
+        'ncas': [3,3],
+        'nelecas': [[3,0],[0,3]],
+        'spinsub': [4,4],
+        'frag_atom_list': [[0],[1]]
+    }
     
     h6_sto3g : MolConfig = {
         'name': 'H6_STO3G',
@@ -335,6 +391,22 @@ if __name__ == "__main__":
     h6_631g = copy.deepcopy(h6_sto3g)
     h6_631g['name'] = 'H6_631G'
     h6_631g['basis'] = '6-31g'
+
+    h6_sto3g_a4 : MolConfig = {
+        'name': 'H6_STO3G_A4',
+        'xyz': H6xyz,
+        'basis': 'sto-3g',
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spinsub': [1, 1],
+        'frag_atom_list': ((0, 1), (2, 3)),
+        'frag_spin_orb': {
+            0: (0, 1, 6, 7),
+            1: (2, 3, 8, 9),
+            2: (4, 5, 10, 11)
+        },
+        'adj': empty_adj(3),
+    }
     
     h8_sto3g : MolConfig = {
         'name': 'H8_STO3G',
@@ -451,7 +523,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c4_631g, c10_sto3g,  h6_sto3g, h6_631g, c4_sto3g,  c6_sto3g, c6_631g, h8_sto3g, h8_631g, h10_circle_sto3g, ]
+    mol_configs = [h6_sto3g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -473,7 +545,7 @@ if __name__ == "__main__":
     tests = [
         noci_test_01,
         noci_test_001,
-#        noci_test_0001
+        noci_test_0001
     ]
 
 
@@ -495,6 +567,8 @@ if __name__ == "__main__":
                 print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
             if 'nn_g' in result:
                 print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
+            if 'las_uscc_noci_vec' in result:
+                print("MC-USCC-NOCI vector: ", result['las_uscc_noci_vec'])
             print("\n")
         
         print("\n\n")
