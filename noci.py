@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Minimal demonstration of non‑orthogonal configuration‑interaction
-recoupling with PyGNME + PySCF.
-
-* Builds an H6 chain in STO‑3G
-* Generates two multiconfigurational reference states
-  – a CASSCF(4e,4o) and a CASCI(2e,2o)
-* Couples them with the build_noci_matrices() helper
-* Prints Hamiltonian, overlap, one‑RDMs, and recoupled energies
-"""
 
 import numpy as np
 import scipy.linalg
@@ -16,9 +6,11 @@ from dataclasses import dataclass
 
 from pyscf import gto, scf, mcscf, ao2mo, fci
 from pygnme import wick, utils
+from typing import Iterable
+from mrh.exploratory.citools import fockspace
 
 
-
+TRACE_PROGRESS = True  # Set to False to disable progress output
 # ------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------
@@ -34,8 +26,8 @@ def owndata(x: np.ndarray) -> np.ndarray:
 @dataclass
 class NOCIState:
     """Container holding everything needed for one reference state."""
-    ci:    np.ndarray  # CAS-CI coefficient tensor (α_det, β_det)
-    mo:    np.ndarray  # MO coefficients (nmo, nmo)
+    ci:    any
+    mo:    any
     nact:  int         # # active orbitals
     ncore: int         # # core orbitals
 
@@ -69,10 +61,20 @@ def build_noci_matrices(states, h1e, h2e, ovlp, nmo, nocc, enuc):
             mb.add_one_body(h1e)
             mb.add_two_body(h2e)
 
+            total_iterations = len(vx) * len(vw) * len(vx) * len(vw)
+            if TRACE_PROGRESS:
+                print(f"Evaluating {total_iterations} cycles...")
+
+            iter_count = 0
+
             for iwa, da in enumerate(vw):
                 for iwb, db in enumerate(vw):
                     for ixa, ca in enumerate(vx):
                         for ixb, cb in enumerate(vx):
+
+                            iter_count += 1
+                            if TRACE_PROGRESS and iter_count % 100 == 0:
+                                print(f"Progress: {iter_count}/{total_iterations} ({iter_count / total_iterations * 100:.2f}%)")
                             stmp, htmp = mb.evaluate(ca, cb, da, db)
                             coeff = stw.ci[iwa, iwb] * stx.ci[ixa, ixb]
 
@@ -105,128 +107,201 @@ from mrh.exploratory.unitary_cc.uccsd_sym0 import get_uccsd_op
 from mrh.exploratory.citools import grad, lasci_ominus1
 from pyscf.fci import cistring
 
-def fock_ci_to_cas_ci(norbcas, neleacas, nelebcas, uscc_ci):
+def fock_ci_to_cas_ci(ncas, neleacas, nelebcas, uscc_ci):
     ''' Convert Fock space CI to CASCI, FOCK CI is the tensor product of
     fragment CIs, of size 2^norb x 2^norb. Many elemnts of FOCK CI
     are 0 and corresponds to invalid determinants. CASCI is a 
     c(norb,nelec) x c(norb,nelec) matrix. '''
-    comb_str_a = cistring.make_strings(range(norbcas), neleacas)
-    comb_str_b = cistring.make_strings(range(norbcas), nelebcas)
+    comb_str_a = cistring.make_strings(range(ncas), neleacas)
+    comb_str_b = cistring.make_strings(range(ncas), nelebcas)
     cas_ci = np.zeros((len(comb_str_a), len(comb_str_b)), dtype=uscc_ci.dtype)
     for i, bra in enumerate(comb_str_a):
         for j, ket in enumerate(comb_str_b):
             cas_ci[i,j] = uscc_ci[bra, ket]
     return cas_ci
 
+def flatten(seq: Iterable) -> list:
+    result = []
+    for item in seq:
+        if isinstance(item, (list, tuple, np.ndarray)):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+    return result
+
+def cilas2f(lasci, norb_f, nelec_f):
+    ''' nelec (na, nb)'''
+    ci_f = []
+    for i, ci in enumerate(lasci):
+        ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
+    return ci_f
+
+
+
+def build_las_states(mf, frag_confs):
+    """Build LASSCFState objects from molecule and fragment configurations."""
+    states = []
+    for i, frag_conf in enumerate(frag_confs):
+        ncas = frag_conf['ncas']
+        nelecas = frag_conf['nelecas']
+        spin_sub = frag_conf['spin_sub']
+        frag_atoms = frag_conf['frag_atom_list']
+
+        las = LASSCF(mf, ncas, nelecas, spin_sub=spin_sub)
+        mo_loc = las.localize_init_guess (frag_atoms, mf.mo_coeff)
+        las.kernel (mo_loc)
+        states.append(las)
+
+    return states
+
+def las2noci_state(mol, las):
+    """Convert a list of LASSCF states to NOCIState objects."""
+    
+    # mc_uscc = mcscf.CASCI(mf, sum(flatten(las.ncas_sub)), sum(flatten(las.nelecas_sub)))
+    # mc_uscc.mo_coeff = las.mo_coeff
+
+    fci = lasuccsd.FCISolver_USCC(mol, [],[])
+    ncas = sum(flatten(las.ncas_sub))
+    nelec = sum(flatten(las.nelecas_sub))
+
+    las_fock_ci = cilas2f(las.ci, las.ncas_sub, las.nelecas_sub)
+    psi =  getattr (fci, 'psi', fci.build_psi (las_fock_ci, ncas, las.ncas_sub, nelec)) # not sure about this
+
+    cas_fock_ci = psi.dp_ci(las_fock_ci)
+    # Here I assume spin up = spin down, so ncas is the same for both
+    neleca = nelecb = nelec // 2
+    if nelec % 2 != 0:
+        raise ValueError("nelec must be even for NOCIState conversion")
+    cas_ci = fock_ci_to_cas_ci(ncas, neleca, nelecb, cas_fock_ci)
+
+    return NOCIState(owndata(cas_ci), owndata(las.mo_coeff), ncas, mol.nao - ncas) # ncore 
+
+data_dir = "/home/jinx/repo/qchem/las_uccsd_data"
+
+
+
 
 def main():
-    # ----- build test molecule -----
-    # Initializing the molecule with RHF
-    #===================================
-    xyz = '''H 0.0 0.0 0.0;
-                H 1.0 0.0 0.0;
-                H 0.2 1.6 0.1;
-                H 1.159166 1.3 -0.1'''
-    mol = gto.M (atom = xyz, basis = 'sto-3g', output='h4_sto3g.log.py',
-        verbose=0)
-    mf = scf.RHF (mol).run ()
-    ref = mcscf.CASSCF (mf, 4, 4).run () # = FCI
+
+    with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
+        h10_circle_xyz = f.read()
+
+    h4_xyz =   """H      0.000000000000   0.000000000000   0.000000000000
+            H      1.000000000000   0.000000000000   0.000000000000
+            H      0.273746762116   2.195450598147   0.100000000000
+            H      1.232912762116   1.895450598147  -0.100000000000
+            """
+
+    h8_xyz = """H      0.000000000000   0.000000000000   0.000000000000
+            H      1.000000000000   0.000000000000   0.000000000000
+            H      0.273746762116   2.195450598147   0.100000000000
+            H      1.232912762116   1.895450598147  -0.100000000000
+            H      0.507178110854   4.193780995243   0.049334760036
+            H      1.506140937609   3.988021397347  -0.049334760036
+            H      0.845946518048   6.364231296231   0.197836732111
+            H      1.674032054647   5.908472292654  -0.197836732111
+        """
+
+    h4_sto3g = {
+        'name': 'H4_STO3G',
+        'xyz': h4_xyz,
+        'basis': 'sto-3g',
+    }
+
+    h4_frag1 = {
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spin_sub': [1, 1],
+        'frag_atom_list': [[0, 1], [2, 3]]
+    }
+
+    h4_frag2 = {
+        'ncas' : [4],
+        'nelecas' : [4],
+        'spin_sub' : [1],
+        'frag_atom_list' : [[0, 1, 2, 3]]
+    }
 
 
-    # Running LASSCF
-    #===================================
-    las = LASSCF (mf, (2,2), (2,2), spin_sub=(1,1))
-    las.verbose = 4
-    frag_atom_list = ((0,1),(2,3))
-    mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
-    las.kernel (mo_loc)
+    h8_sto3g = {
+        'name': 'H8_STO3G',
+        'xyz': h8_xyz,
+        'basis': 'sto-3g',
+    }
 
-    # ----- RHF -----
-    mf = scf.RHF(mol).run()
+    h8_frag1 = {
+        'ncas': [2, 2, 2, 2],
+        'nelecas': [2, 2, 2, 2],
+        'spin_sub': [1, 1, 1, 1],
+        'frag_atom_list': [[0, 1], [2, 3], [4, 5], [6, 7]]
+    }
 
-    h1e  = owndata(mf.get_hcore())
-    h2e  = owndata(ao2mo.restore(1, mf._eri, mol.nao)
-                   .reshape(mol.nao**2, mol.nao**2))
-    ovlp = owndata(mf.get_ovlp())
-    nmo  = mf.mo_coeff.shape[1]
-    print("nmo = ", nmo)
-    nocc = int(np.sum(mf.mo_occ > 0))
-    # nocc = 3  # 3 occupied orbitals for each spin
+    h8_frag2 = {
+        'ncas' : [4,4],
+        'nelecas' : [4,4],
+        'spin_sub' : [1,1],
+        'frag_atom_list' : [[0,1,2,3], [4,5,6,7]]
+    }
 
-    print("mf.mo_occ = ", mf.mo_occ)
+    h10_circle_sto3g = {
+        'name': 'H10_CIRCLE_STO3G',
+        'xyz': h10_circle_xyz,
+        'basis': 'sto-3g',
+    }
 
-    all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon=0.0001)
-    # print ("All gradients = ", all_g)
-    # print ("Selected gradients = ", g_sel)
+    h10_circle_frag1 = {
+        'ncas': [2,2,2,2,2],
+        'nelecas': [2,2,2,2,2],
+        'spin_sub': [1,1,1,1,1],
+        'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
+    }
 
-    excitations = []
-    for a, i in zip(a_idxs_selected, i_idxs_selected):
-        excitations.append((tuple(i), tuple(a[::-1])))
+    h10_circle_frag2 = {
+        'ncas': [4,4,2],
+        'nelecas': [4,4,2],
+        'spin_sub': [1,1,1],
+        'frag_atom_list': [[0,1,2,3], [4,5,6,7], [8,9]],
+    }
 
-    # print ("Selected excitations = ", excitations)
-
-    #Computing energy through the LAS-UCC kernel using selected excitations
-    #==========================================================================================
-    epsilon=0.001
-    mc_uscc = mcscf.CASCI(mf, 4, 4)
-
-
-    mc_uscc.mo_coeff = las.mo_coeff
-    lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
-    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-    mc_uscc.fcisolver.norb_f = [2,2]
-    mc_uscc.fcisolver.frozen = 'CI'
-    e1, _, ci1, mo1, _ =mc_uscc.kernel()
-
-    print("mc_uscc ci shape = ", ci1.shape)
-    mc_cas_ci = fock_ci_to_cas_ci(nmo, 2,2, ci1)
-    print("mc_cas_ci shape = ", mc_cas_ci.shape)
-
-    # # ----- multiconfigurational references -----
-    # # CASSCF(4e,4o)
-    # casscf1 = mcscf.CASSCF(mf, 4, (2,2))
-    # e1, _, ci1, mo1, _ = casscf1.kernel()
-    # print("mo1 = ", mo1)
-    # print("ci1 = ", ci1)
-    # ncas1, ncore1 = casscf1.ncas, casscf1.ncore
-
-    # # print("CI1 : ", ci1)
-
-    # # CASCI(2e,2o)
-    # casci2 = mcscf.CASCI(mf, 2, (1,1))
-    # e2, _, ci2, mo2, _ = casci2.kernel()
-    # print("CI2 : ", ci2)
-    # ncas2, ncore2 = casci2.ncas, casci2.ncore
-
-    # print("Reference energies:")
-    # print(f"  CASSCF(4e,4o): {e1:16.10f} Eh")
-    # print(f"  CASCI (2e,2o): {e2:16.10f} Eh\n")
+    mol_confs = [h4_sto3g, h8_sto3g]
+    frag_confs = [[h4_frag1, h4_frag2], [h8_frag1, h8_frag2]]
 
 
-    # ----- package into NOCIState objects -----
-    states = [
-        NOCIState(ci=owndata(mc_cas_ci), mo=owndata(mo1),
-                  nact=4, ncore=0),
-        NOCIState(ci=owndata(mc_cas_ci), mo=owndata(mo1),
-                  nact=4, ncore=0),
-    ]
+    for mol_conf, frag_conf_list in zip(mol_confs, frag_confs):
+        print(f"\nRunning calculation for molecule: {mol_conf['name']}")
+        mol = gto.Mole(atom=mol_conf['xyz'], basis=mol_conf['basis'], verbose=0)
+        mol.build()
+        mf = scf.RHF(mol).run()
 
-    # ----- build NOCI matrices -----
-    h, s, rdm1 = build_noci_matrices(states, h1e, h2e, ovlp,
-                                     nmo, nocc, mol.energy_nuc())
+        las_states = build_las_states(mf, frag_conf_list)
+        for i, las in enumerate(las_states):
+            print(f"LASSCF state {i} energy = ", las.e_tot)
 
-    print("Hamiltonian matrix H:\n", h)
-    print("\nOverlap matrix S:\n", s)
+        noci_states = []
+        for las in las_states:
+            noci_states.append(las2noci_state(mol, las))
 
-    # # ----- generalised diagonalisation -----
-    # evals, evecs = scipy.linalg.eigh(h, b=s)
+        h1e  = owndata(mf.get_hcore())
+        h2e  = owndata(ao2mo.restore(1, mf._eri, mol.nao)
+                       .reshape(mol.nao**2, mol.nao**2))
+        ovlp = owndata(mf.get_ovlp())
+        nmo  = mf.mo_coeff.shape[1]
+        nocc = int(np.sum(mf.mo_occ > 0)) # not sure about this
 
-    # print("\nRecoupled NOCI energies (Eh):")
-    # for i, e in enumerate(evals):
-    #     print(f"  root {i}: {e:16.10f}")
+        h, s, _ = build_noci_matrices(noci_states, h1e, h2e, ovlp, nmo, nocc, mol.energy_nuc())
 
-    # # (optional) display a 1‑RDM block
-    # print("\n⟨Ψ₀|γ|Ψ₀⟩ (first RDM1 block):\n", rdm1[0, 0])
+        print("Hamiltonian matrix H:\n", h)
+        print("\nOverlap matrix S:\n", s)
+
+        # ----- generalised diagonalisation -----
+        evals, evecs = scipy.linalg.eigh(h, b=s)
+
+        print("\nRecoupled NOCI energies (Eh):")
+        for i, e in enumerate(evals):
+            print(f"  root {i}: {e:16.10f}")
+
+        # # (optional) display a 1‑RDM block
+        # print("\n⟨Ψ₀|γ|Ψ₀⟩ (first RDM1 block):\n", rdm1[0, 0])
 
 
 if __name__ == "__main__":
