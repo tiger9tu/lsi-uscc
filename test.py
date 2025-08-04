@@ -18,7 +18,7 @@ from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
 
-VERBOSE = 1
+VERBOSE = 0
 
 def flatten(seq: Iterable) -> list:
     result = []
@@ -198,16 +198,25 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, 
 
 
     las_ucc_trial_cis = []
+    
+    min_ci_eng = 99999.9
     for i in range(nc):
         mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
         mc_uscc_ci.mo_coeff = las.mo_coeff
         mc_uscc_ci.fcisolver = lasuccsd.FCISolver_USCC(mol, a_splits[i], i_splits[i])
-        print("a_idxs: ", a_splits[i]
-              , " i_idxs: ", i_splits[i])
+
+
         mc_uscc_ci.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
         # easily hit the maximal memory limit
         mc_uscc_ci.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
         mc_uscc_ci.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
+
+        if not mc_uscc_ci.converged:
+            print('Warning: kernel hasn\'t converged for CI ', i)
+
+        if mc_uscc_ci.e_tot < min_ci_eng:
+            min_ci_eng = mc_uscc_ci.e_tot
+
         las_ucc_trial_cis.append(mc_uscc_ci.fcisolver.psi)
         if VERBOSE >= 1:
             print("CI ", i, "amplitudes: ", mc_uscc_ci.fcisolver.psi.x)
@@ -216,6 +225,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, 
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
     h = [e_core, h1eff, h2eff]
+
 
     for i in range(nc):
         for j in range(nc):
@@ -226,8 +236,9 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, 
         print_matrix(S)
         print("H matrix:")
         print_matrix(H)
+
     eigvals, eigvecs = eigh(H, S)
-    return eigvals[0], eigvecs[0]  # Take the lowest eigenvalue as the energy
+    return eigvals[0], eigvecs[0], min_ci_eng   # Take the lowest eigenvalue as the energy
 
 
 
@@ -284,7 +295,7 @@ def test(mol_config, test_config,las, mol, mf):
     result['las_uscc_eng'] =  mc_uscc.e_tot 
    
     if test_config['noci_test']:
-        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
+        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
     
     return result
    
@@ -596,6 +607,8 @@ if __name__ == "__main__":
                 print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
             if 'las_uscc_noci_vec' in result:
                 print("MC-USCC-NOCI vector: ", result['las_uscc_noci_vec'])
+            if 'min_ci_eng' in result:
+                print(f"Minimum CI energy: {result['min_ci_eng']:.17f}")
             print("\n")
         
         print("\n\n")
