@@ -10,7 +10,7 @@ from typing import Iterable
 from mrh.exploratory.citools import fockspace
 
 
-TRACE_PROGRESS = True  # Set to False to disable progress output
+TRACE_PROGRESS = False  # Set to False to disable progress output
 # ------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------
@@ -49,6 +49,13 @@ def build_noci_matrices(states, h1e, h2e, ovlp, nmo, nocc, enuc):
 
         for w in range(x, nstate):
             stw = states[w]
+
+            # Generate list of bitsets for all configurations of electrons in orbitals
+            # Here we assume it's RHF, so all the orbitals are doubly occupied
+            #     \param nelec Total number of (doubly) occupied orbitals in the active space
+            #     \param norb  Total number of spatial molecular orbitals in the active space
+            # std::vector<bitset> fci_bitset_list(size_t nelec, size_t norb);
+
             vw  = utils.fci_bitset_list(nocc - stw.ncore, stw.nact)
             print("noccw = ", nocc, " nactw = ", stw.nact, " ncorew = ", stw.ncore)
             refw = wick.reference_state[float](nmo, nmo, nocc, stw.nact, stw.ncore, stw.mo)
@@ -174,7 +181,9 @@ def las2noci_state(mol, las):
         raise ValueError("nelec must be even for NOCIState conversion")
     cas_ci = fock_ci_to_cas_ci(ncas, neleca, nelecb, cas_fock_ci)
 
-    return NOCIState(owndata(cas_ci), owndata(las.mo_coeff), ncas, mol.nao - ncas) # ncore 
+    print("mol.nao = ", mol.nao, " ncas = ", ncas, " nelec = ", nelec)
+
+    return NOCIState(owndata(cas_ci), owndata(las.mo_coeff), ncas, las.ncore) # ncore 
 
 data_dir = "/home/jinx/repo/qchem/las_uccsd_data"
 
@@ -186,11 +195,20 @@ def main():
     with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
         h10_circle_xyz = f.read()
 
+    with open(data_dir + '/polyenes/geometries/c4.xyz', 'r', encoding='utf-8') as f:
+        c4xyz = f.read()
+
     h4_xyz =   """H      0.000000000000   0.000000000000   0.000000000000
             H      1.000000000000   0.000000000000   0.000000000000
             H      0.273746762116   2.195450598147   0.100000000000
             H      1.232912762116   1.895450598147  -0.100000000000
             """
+    h6_xyz = """H      0.000000000000   0.000000000000   0.000000000000
+            H      1.000000000000   0.000000000000   0.000000000000
+            H      0.273746762116   2.195450598147   0.100000000000
+            H      1.232912762116   1.895450598147  -0.100000000000
+            H      0.507178110854   4.193780995243   0.049334760036
+            H      1.506140937609   3.988021397347  -0.049334760036"""
 
     h8_xyz = """H      0.000000000000   0.000000000000   0.000000000000
             H      1.000000000000   0.000000000000   0.000000000000
@@ -222,6 +240,25 @@ def main():
         'frag_atom_list' : [[0, 1, 2, 3]]
     }
 
+    h6_sto3g = {
+        'name': 'H6_STO3G',
+        'xyz': h6_xyz,
+        'basis': 'sto-3g',
+    }
+
+    h6_frag1 = {
+        'ncas': [2, 2, 2],
+        'nelecas': [2, 2, 2],
+        'spin_sub': [1, 1, 1],
+        'frag_atom_list': [[0, 1], [2, 3], [4, 5]]
+    }
+
+    h6_frag2 = {
+        'ncas': [2, 2, 2],
+        'nelecas': [2, 2, 2],
+        'spin_sub': [1, 1, 1],
+        'frag_atom_list': [[1,2],[3,4],[5,0]]
+    }
 
     h8_sto3g = {
         'name': 'H8_STO3G',
@@ -263,16 +300,45 @@ def main():
         'frag_atom_list': [[0,1,2,3], [4,5,6,7], [8,9]],
     }
 
-    mol_confs = [h4_sto3g, h8_sto3g]
-    frag_confs = [[h4_frag1, h4_frag2], [h8_frag1, h8_frag2]]
+    c4_sto3g = {
+        'name': 'C4_STO3G',
+        'xyz': c4xyz,
+        'basis': 'sto-3g',
+    }
+
+    c4_frag1 = {
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spin_sub': [1, 1],
+        'frag_atom_list': [[0, 1], [2, 3]]
+    }
+
+
+    c4_frag2 = {
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spin_sub': [1, 1],
+        'frag_atom_list': [[1,2], [0, 3]]
+    }
+
+    c4_frag3 = {
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spin_sub': [1, 1],
+        'frag_atom_list': [[0, 2], [1, 3]]
+    }
+
+    mol_confs = [c4_sto3g, h8_sto3g]
+    frag_confs = [[c4_frag1, c4_frag2, c4_frag3], [h8_frag1, h8_frag2]]
 
 
     for mol_conf, frag_conf_list in zip(mol_confs, frag_confs):
         print(f"\nRunning calculation for molecule: {mol_conf['name']}")
         mol = gto.Mole(atom=mol_conf['xyz'], basis=mol_conf['basis'], verbose=0)
+        
         mol.build()
         mf = scf.RHF(mol).run()
-
+        
         las_states = build_las_states(mf, frag_conf_list)
         for i, las in enumerate(las_states):
             print(f"LASSCF state {i} energy = ", las.e_tot)
@@ -286,7 +352,7 @@ def main():
                        .reshape(mol.nao**2, mol.nao**2))
         ovlp = owndata(mf.get_ovlp())
         nmo  = mf.mo_coeff.shape[1]
-        nocc = int(np.sum(mf.mo_occ > 0)) # not sure about this
+        nocc = int(np.sum(mf.mo_occ > 0)) # correct for RHF
 
         h, s, _ = build_noci_matrices(noci_states, h1e, h2e, ovlp, nmo, nocc, mol.energy_nuc())
 

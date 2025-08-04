@@ -7,6 +7,8 @@ from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
 from mrh.exploratory.unitary_cc import lasuccsd
 from mrh.exploratory.unitary_cc.uccsd_sym0 import get_uccsd_op
 from mrh.exploratory.citools import grad, lasci_ominus1
+from mrh.exploratory.citools import fockspace
+
 
 from typing import Iterable, Union
 from typing import Dict, List, Any, TypedDict
@@ -21,7 +23,7 @@ VERBOSE = 1
 def flatten(seq: Iterable) -> list:
     result = []
     for item in seq:
-        if isinstance(item, (list, tuple)):
+        if isinstance(item, (list, tuple, np.ndarray)):
             result.extend(flatten(item))
         else:
             result.append(item)
@@ -41,6 +43,14 @@ def is_nn(idxes, config):
     return len(fragments) <= 2 and config['adj'][fragments[0]][fragments[1]] == 1
 
 GLOBAL_MAX_CYCLE = 15000 # debug 
+
+
+def cilas2f(lasci, norb_f, nelec_f):
+    ''' nelec (na, nb)'''
+    ci_f = []
+    for i, ci in enumerate(lasci):
+        ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
+    return ci_f
 
 
 class MolConfig(TypedDict):
@@ -114,6 +124,26 @@ def print_excitations(a_idxs, i_idxs):
     for excitation in excitations:
         print([[int(x) for x in flatten(excitation)]])
 
+def divide_excitations_geom(a_idxs, i_idxs, n):
+    """Divide excitations into n groups based on their geometry."""
+    if len(a_idxs) != len(i_idxs):
+        raise ValueError("a_idxs and i_idxs must have the same length")
+    
+    grouped_a_idxs = [[] for _ in range(n)]
+    grouped_i_idxs = [[] for _ in range(n)]
+
+    max_excitation = max(flatten([a_idxs, i_idxs]), default=0)
+
+    group_size = (max_excitation + 1) // n + (1 if (max_excitation + 1) % n > 0 else 0)
+    
+    for (a,i) in zip(a_idxs, i_idxs):
+        group_idx = flatten(a)[0] // group_size
+        grouped_a_idxs[group_idx].append(a)
+        grouped_i_idxs[group_idx].append(i)
+    
+    return grouped_a_idxs, grouped_i_idxs
+
+
 def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, mc_uscc, mf):
     nx = len(a_idxs_selected)
     a_single_idx = []
@@ -148,10 +178,8 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, 
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
 
-    a_singles_split = arr_split(a_single_idx, nc)
-    i_singles_split = arr_split(i_single_idx, nc)
-    a_doubles_split = arr_split(a_double_idx, nc)
-    i_doubles_split = arr_split(i_double_idx, nc)
+    a_singles_split, i_singles_split = divide_excitations_geom(a_single_idx,i_single_idx, nc)
+    a_doubles_split, i_doubles_split = divide_excitations_geom(a_double_idx,i_double_idx, nc)
 
     # Combine singles and doubles into one list for each CI
     a_splits = []
@@ -179,7 +207,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config,mol_config, mol,las, 
         mc_uscc_ci.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
         # easily hit the maximal memory limit
         mc_uscc_ci.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
-        mc_uscc_ci.kernel()
+        mc_uscc_ci.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
         las_ucc_trial_cis.append(mc_uscc_ci.fcisolver.psi)
         if VERBOSE >= 1:
             print("CI ", i, "amplitudes: ", mc_uscc_ci.fcisolver.psi.x)
@@ -245,7 +273,7 @@ def test(mol_config, test_config,las, mol, mf):
     mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     # easily hit the maximal memory limit
     mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
-    mc_uscc.kernel()
+    mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
     
@@ -301,7 +329,6 @@ def batch_test(mol_config, test_configs):
         results.append(result)
     
     return results, ref.e_tot, las.e_tot
-
 
 
 
@@ -523,7 +550,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h6_sto3g]
+    mol_configs = [c4_sto3g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -544,8 +571,8 @@ if __name__ == "__main__":
 
     tests = [
         noci_test_01,
-        noci_test_001,
-        noci_test_0001
+        # noci_test_001,
+        # noci_test_0001
     ]
 
 
