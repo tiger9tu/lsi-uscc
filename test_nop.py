@@ -104,8 +104,6 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
 
-
-
     las_ucc_trial_cis = []
     
     min_ci_eng = 99999.9
@@ -142,11 +140,45 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     h = [e_core, h1eff, h2eff]
 
 
-    for i in range(nc):
-        for j in range(nc):
-            S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[i], las_ucc_trial_cis[j], h)
+    # Build S matrix incrementally, discarding linearly dependent CIs
+    selected_indices = []
+    S_inc = np.zeros((0, 0), dtype=np.complex128)
+    threshold = 1e7  # You can adjust this threshold as needed
+
+    for idx, psi in enumerate(las_ucc_trial_cis):
+        # Build S matrix for current selection + this CI
+        n_sel = len(selected_indices)
+        S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
+        # Fill previous block
+        if n_sel > 0:
+            S_new[:n_sel, :n_sel] = S_inc
+            for j, jidx in enumerate(selected_indices):
+                S_new[n_sel, j] = get_Sij_Hij(psi, las_ucc_trial_cis[jidx], h)[0]
+                S_new[j, n_sel] = get_Sij_Hij(las_ucc_trial_cis[jidx], psi, h)[0]
+        # Diagonal element
+        S_new[n_sel, n_sel] = get_Sij_Hij(psi, psi, h)[0]
+        # Check condition number
+        cond = np.linalg.cond(S_new)
+        if cond < threshold:
+            selected_indices.append(idx)
+            S_inc = S_new
+        else:
+            if VERBOSE >= 1:
+                print(f"Discarding CI {idx} due to linear dependence (cond={cond:.2e})")
+
+    # Now, only keep selected CIs for S and H
+    nc_sel = len(selected_indices)
+    S = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
+    H = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
+    for i, idx_i in enumerate(selected_indices):
+        for j, idx_j in enumerate(selected_indices):
+            S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[idx_i], las_ucc_trial_cis[idx_j], h)
 
     if VERBOSE >= 0:
+        print(f"Selected {nc_sel} CIs out of {nc} total CIs")
+        print("Condition number of S matrix: ", np.linalg.cond(S))
+
+    if VERBOSE >= 1:
         print("S matrix:")
         print_matrix(S)
         print("H matrix:")
@@ -266,6 +298,12 @@ def circle_adj(n):
 
 
 if __name__ == "__main__":
+    H4xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
+    H      1.000000000000   0.000000000000   0.000000000000
+    H      0.273746762116   2.195450598147   0.100000000000
+    H      1.232912762116   1.895450598147  -0.100000000000
+    '''
+
     H6xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
     H      1.000000000000   0.000000000000   0.000000000000
     H      0.273746762116   2.195450598147   0.100000000000
@@ -324,6 +362,17 @@ if __name__ == "__main__":
     #     'spinsub': [4,4],
     #     'frag_atom_list': [[0],[1]]
     # }
+
+    h4_sto3g : MolConfig = {
+        'name': 'H4_STO3G',
+        'xyz': H4xyz,
+        'basis': 'sto-3g',
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spinsub': [1, 1],
+        'frag_atom_list': ((0, 1), (2, 3)),
+    }
+
     
     h6_sto3g : MolConfig = {
         'name': 'H6_STO3G',
@@ -476,7 +525,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c4_sto3g]
+    mol_configs = [h4_sto3g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
