@@ -62,6 +62,13 @@ class TestConfig(TypedDict):
     noci_test: bool  
     frozen: str
 
+def get_Sij(psi_i, psi_j):
+    """Compute the overlap Sij = <psi_i|psi_j>."""
+    ucj, _ = psi_j.hc_x(psi_j.x)[1:3]
+    uci, _ = psi_i.hc_x(psi_i.x)[1:3]
+    ucj, uci = ucj.ravel(), uci.ravel()
+    Sij = uci.conj().dot(ucj)
+    return Sij
 
 def get_Sij_Hij(psi_i, psi_j, h):
     ucj, hucj = psi_j.hc_x (psi_j.x, h)[1:3]
@@ -153,10 +160,10 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         if n_sel > 0:
             S_new[:n_sel, :n_sel] = S_inc
             for j, jidx in enumerate(selected_indices):
-                S_new[n_sel, j] = get_Sij_Hij(psi, las_ucc_trial_cis[jidx], h)[0]
-                S_new[j, n_sel] = get_Sij_Hij(las_ucc_trial_cis[jidx], psi, h)[0]
+                S_new[n_sel, j] = get_Sij(psi, las_ucc_trial_cis[jidx])
+                S_new[j, n_sel] = get_Sij(las_ucc_trial_cis[jidx], psi)
         # Diagonal element
-        S_new[n_sel, n_sel] = get_Sij_Hij(psi, psi, h)[0]
+        S_new[n_sel, n_sel] = get_Sij(psi, psi)
         # Check condition number
         cond = np.linalg.cond(S_new)
         if cond < threshold:
