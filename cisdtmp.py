@@ -27,7 +27,7 @@ from mrh.exploratory.unitary_cc import lasuccsd
 from mrh.exploratory.unitary_cc.uccsd_sym0 import get_uccsd_op
 from mrh.exploratory.citools import grad, lasci_ominus1
 from mrh.exploratory.citools import fockspace
-
+from pyscf import ao2mo, fci
 
 from typing import Iterable, Union
 from typing import Dict, List, Any, TypedDict
@@ -109,6 +109,8 @@ def kernel(myci, eris, ci0=None, max_cycle=50, tol=1e-8, verbose=logger.INFO):
                                     max_cycle=max_cycle, max_space=myci.max_space,
                                     lindep=myci.lindep, dot=cisd_dot,
                                     nroots=myci.nroots, verbose=log)
+    
+
     if myci.nroots == 1:
         conv = conv[0]
         ecisd = ecisd[0]
@@ -1047,6 +1049,7 @@ class CISD(lib.StreamObject):
 
         ci_guess = amplitudes_to_cisdvec(ci0, ci1, ci2)
 
+
         if nroots > 1:
             civec_size = ci_guess.size
             dtype = ci_guess.dtype
@@ -1193,9 +1196,43 @@ def ci2fock(fci_vec, norb, nelec):
     for ia, a_occ in enumerate(alpha_strs):
         for ib, b_occ in enumerate(beta_strs):
             fock[a_occ, b_occ] = fci_vec[ia, ib]
-
+    
     return fock
 
+def cas_energy_of_ci(mc, ci):
+    """
+    Evaluate total energy of a CASCI/CASSCF CI vector.
+    Works with RHF reference + direct_spin1 FCI solver.
+    """
+    mol = mc.mol
+    mo  = mc.mo_coeff
+    ncore, ncas = mc.ncore, mc.ncas
+    nelecas = mc.nelecas  # should be (na, nb) or int
+
+    # Ensure types are what FCI expects
+    norb = int(ncas)
+    if isinstance(nelecas, int):
+        # If given total electrons, split assuming RHF balance
+        na = nb = nelecas // 2
+        nelec = (na, nb)
+    else:
+        nelec = tuple(nelecas)
+
+    # Effective 1e Hamiltonian in active space + constant core energy
+    h1eff, ecore = mc.h1e_for_cas(mo)  # h1eff: (ncas, ncas)
+    
+
+    # Active MO block
+    mo_act = mo[:, ncore:ncore+ncas]
+
+    # Build 2e integrals in packed 2-index (physicist's) format expected by FCI
+    # Shape: (npair, npair), where npair = ncas*(ncas+1)//2
+    eri_packed = ao2mo.kernel(mol, mo_act)  # compact=True by default
+
+    # Now compute <CI|H_active|CI>
+    e_active = fci.direct_spin1.energy(h1eff, eri_packed, ci, norb, nelec)
+
+    return ecore + e_active
 
 
 if __name__ == '__main__':
@@ -1206,16 +1243,16 @@ if __name__ == '__main__':
 
     mol = gto.Mole()
     mol.verbose = 0
-    mol.atom = [
-        ['O', ( 0., 0.    , 0.   )],
-        ['H', ( 0., -0.757, 0.587)],
-        ['H', ( 0., 0.757 , 0.587)],]
+
+    mol.atom = '''H      4.368691769625   0.000000000000   0.000000000000
+    H      3.534345884812   2.567852593997   0.000000000000
+    H      1.350000000000   4.154872775187   0.000000000000
+    H     -1.350000000000   4.154872775187   0.000000000000'''
     mol.basis = 'sto3g'
     mol.build()
     mf = scf.RHF(mol).run()
     mp2 = MP2(mf)
     mp2.kernel()
-    print("MP2 energy =", mp2.e_tot)
 
     nmo = mf.mo_coeff.shape[1]
     nocc = mol.nelectron // 2
@@ -1226,76 +1263,33 @@ if __name__ == '__main__':
     norb = mf.mo_coeff.shape[1]
     nelec = mol.nelectron
     fci_vec = to_fcivec(civec, norb, nelec)
+    fci_vec /= np.linalg.norm(fci_vec)
 
+    # first let's verify that the fci energy 
+    # equals to the mp2 energy
+    mc = mcscf.CASCI(mf, norb, nelec).run()
+    e_mc_mp2_ci = cas_energy_of_ci(mc, fci_vec)
+    print("init ci energy = ", e_mc_mp2_ci)
+    print("mp2 energy = ", mp2.e_tot)
+
+    # Then, let's assign the fci to uscc
+    # and check that the energy is the same
     mc_uscc = mcscf.CASCI(mf, norb, nelec)
     mc_uscc.mo_coeff = mf.mo_coeff
+
+    eval_fci_energy = cas_energy_of_ci(mc_uscc, fci_vec)
+    
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, [], [])
     norb_f = [norb]
-    
-    # mc_uscc.fcisolver.norb_f = mol_config['ncas']
-    fci = mc_uscc.fcisolver
-    # las_ci0_f = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas'])
 
-    # norb = sum(mol_config['ncas']) # not sure about this
-    # nelec = sum(mol_config['nelecas']) # not sure about this
-    # norb_f = getattr (fci, 'norb_f', [norb])
+    fcis = mc_uscc.fcisolver
     fock_vec = ci2fock(fci_vec, norb, nelec)
     
-    # the frirst argument is the fragment fock ci
-    psi =  getattr (fci, 'psi', fci.build_psi ([fock_vec], norb, norb_f, nelec))
-
-
-
-    # if i < nc - 1:
-    #     psi.x[psi.nconstr + i] = amplitude
+    psi =  getattr (fcis, 'psi', fcis.build_psi ([fock_vec], norb, norb_f, nelec))
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
 
     energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
-    print("energy of psi = ", energy)
-
-    
-    # print("mp2 civec = ", civec)
-    # print("Elements of mp2 civec larger than 1e-3:")
-    # for i, val in enumerate(civec):
-    #     if abs(val) > 1e-3:
-    #         print(f"Index {i}: {val}")
-
-    # myci = CISD(mf)
-    # eris = ccsd._make_eris_outcore(myci, mf.mo_coeff)
-    
-
-    # emp2, ci_init = myci.get_init_guess(eris=eris, nroots=myci.nroots)
-    # print("MP2 energy (init guess) =", emp2)
-    # if isinstance(ci_init, (list, tuple)):
-    #     for i, vec in enumerate(ci_init):
-    #         print(f"Initial CI guess root {i}, shape={vec.shape}, norm={numpy.linalg.norm(vec)}")
-    #         print("Elements of initial CI guess root", i, "larger than 1e-3:")
-    #         for j, val in enumerate(vec):
-    #             if abs(val) > 1e-3:
-    #                 print(f"Index {j}: {val}")
-    # else:
-    #     print(f"Initial CI guess shape={ci_init.shape}, norm={numpy.linalg.norm(ci_init)}")
-    #     print("Elements of initial CI guess larger than 1e-3:")
-    #     for i, val in enumerate(ci_init):
-    #         if abs(val) > 1e-3:
-    #             print(f"Index {i}: {val}")
-
-
-    # ecisd, civec = myci.kernel(eris=eris)
-    # print(ecisd - -0.048878084082066106)
-
-    # nmo = myci.nmo
-    # nocc = myci.nocc
-    # rdm1 = myci.make_rdm1(civec)
-    # rdm2 = myci.make_rdm2(civec)
-    # h1e = reduce(numpy.dot, (mf.mo_coeff.T, mf.get_hcore(), mf.mo_coeff))
-    # h2e = ao2mo.kernel(mf._eri, mf.mo_coeff)
-    # h2e = ao2mo.restore(1, h2e, nmo)
-    # e2 = (numpy.einsum('ij,ji', h1e, rdm1) +
-    #       numpy.einsum('ijkl,ijkl', h2e, rdm2) * .5)
-    # print(ecisd + mf.e_tot - mol.energy_nuc() - e2)   # = 0
-
-    # print(abs(rdm1 - numpy.einsum('ijkk->ji', rdm2)/(mol.nelectron-1)).sum())
+    print("psi energy = ", energy)
 
 
