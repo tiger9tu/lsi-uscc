@@ -1235,6 +1235,42 @@ def cas_energy_of_ci(mc, ci):
     return ecore + e_active
 
 
+def list_rhf_mp2_t2(m, topk=20, thresh=1e-6):
+    """
+    Return a list of (i,j,a,b, I,J,A,B, t2) for RHF MP2,
+    where (i,j,a,b) are occ/vir slots and (I,J,A,B) are absolute MO indices.
+    only keep the topk largest amplitudes
+
+    example:
+    >>> mol = gto.M(atom="O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587",
+                basis="sto-3g", spin=0, verbose=0)
+    >>> mf = scf.RHF(mol).run()
+    >>> m = mp.MP2(mf).run()
+    >>> t2 = m.t2                      # shape (nocc, nocc, nvir, nvir)
+    >>> nocc = m.nocc
+    nvir = m.nmo - nocc
+
+    >>> for i,j,a,b,I,J,A,B,t in list_rhf_mp2_t2(m, topk=15, thresh=1e-6):
+    >>>     print(f"|{I},{J} -> {A},{B}|  (slots i={i},j={j},a={a},b={b})   t2 = {t:+.6e}")
+    """
+    # indices with |t2| > thresh
+    mask_idx = np.argwhere(np.abs(t2) > thresh)
+    if mask_idx.size == 0:
+        return []
+
+    vals = t2[tuple(mask_idx.T)]
+    order = np.argsort(-np.abs(vals))
+    if topk:
+        order = order[:topk]
+
+    rows = []
+    for k in order:
+        i, j, a, b = map(int, mask_idx[k])
+        I, J = i, j                # occupied absolute MO indices
+        A, B = nocc + a, nocc + b  # virtual absolute MO indices
+        rows.append((i, j, a, b, I, J, A, B, float(vals[k])))
+    return rows
+
 if __name__ == '__main__':
     from pyscf import ao2mo
     from pyscf.mp import MP2
@@ -1244,10 +1280,10 @@ if __name__ == '__main__':
     mol = gto.Mole()
     mol.verbose = 0
 
-    mol.atom = '''H      4.368691769625   0.000000000000   0.000000000000
-    H      3.534345884812   2.567852593997   0.000000000000
-    H      1.350000000000   4.154872775187   0.000000000000
-    H     -1.350000000000   4.154872775187   0.000000000000'''
+    mol.atom = '''H      0.000000000000   0.000000000000   0.000000000000
+    H      1.000000000000   0.000000000000   0.000000000000
+    H      0.273746762116   2.195450598147   0.100000000000
+    H      1.232912762116   1.895450598147  -0.100000000000'''
     mol.basis = 'sto3g'
     mol.build()
     mf = scf.RHF(mol).run()
@@ -1292,4 +1328,37 @@ if __name__ == '__main__':
     energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
     print("psi energy = ", energy)
 
+    # Then, let's put psi ci_0 to 0, and use ucc amplitudes to
+    # excite it instead, it should give the same energy and
+    # wave function as the fci initialization
 
+    # we first create the HF gound state psi
+    fci_vec0 = np.zeros_like(fci_vec)
+    fci_vec0[0, 0] = 1.0
+    fock_vec0 = ci2fock(fci_vec0, norb, nelec)
+
+    psi0 =  getattr (fcis, 'psi', fcis.build_psi ([fock_vec0], norb, norb_f, nelec))
+
+    energy0 = psi0.energy_tot(psi0.x, [e_core, h1eff, h2eff])
+
+    # verify that the psi0 is indeed HF ground state
+    print("psi0 energy = ", energy0)
+    print("HF energy = ", mf.e_tot)
+
+    a_idxs = []  # smaller indexes
+    i_idxs = []  # larger indexes
+    
+    # Then we excite psi0 using the MP2 amplitudes
+    for i,j,a,b,I,J,A,B,t in list_rhf_mp2_t2(mp2, topk=1500, thresh=1e-6):
+        print(f"|{I},{J} -> {A},{B}|  (slots i={i},j={j},a={a},b={b})   t2 = {t:+.6e}")
+        a_idxs.append((I, J))
+        i_idxs.append((A, B))
+
+    a_idx_np = [np.array(x, dtype=np.uint8) for x in a_idxs]
+    i_idx_np = [np.array(x, dtype=np.uint8) for x in i_idxs]
+    uscc_fsolver = lasuccsd.FCISolver_USCC(mol, a_idx_np, i_idx_np)
+    uscc_fsolver.mo_coeff = mf.mo_coeff
+
+    print("t2 = \n", t2)
+    # psi_to_excite =  getattr (uscc_fsolver, 'psi', uscc_fsolver.build_psi ([fock_vec0], norb, norb_f, nelec))
+    # psi = LASUCCTrialState(uscc_fsolver, ci0_f, norb, norb_f, nelec)
