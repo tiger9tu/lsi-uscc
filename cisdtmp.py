@@ -357,6 +357,7 @@ def to_fcivec(cisdvec, norb, nelec, frozen=None):
     c2ab = numpy.einsum('i,j,ij->ij', t1sign, t1sign, c2ab)
     fcivec[t1addr[:,None],t1addr] = c2ab
 
+
     if nocc > 1 and nvir > 1:
         c2aa = c2 - c2.transpose(1,0,2,3)
         ooidx = numpy.tril_indices(nocc, -1)
@@ -1271,6 +1272,97 @@ def list_rhf_mp2_t2(m, topk=20, thresh=1e-6):
         rows.append((i, j, a, b, I, J, A, B, float(vals[k])))
     return rows
 
+
+from itertools import combinations
+from math import comb
+
+def extract_sd_excitations(fci_vec, norb, neleca, nelecb, thresh=1e-8):
+    """
+    Scan through the FCI coefficient array fci_vec (shape (C(norb,neleca), C(norb,nelecb))),
+    and return all single and double excitations (particle/hole lists) relative to the
+    reference determinant, along with their amplitudes.
+    
+    Returns
+    -------
+    a_idxs : List[List[int]]
+        Particle (excited-to) spin-orbital lists.
+    i_idxs : List[List[int]]
+        Hole     (excited-from) spin-orbital lists.
+    amps   : List[float]
+        The non-zero CI amplitude for each excitation.
+    """
+    na = comb(norb, neleca)
+    nb = comb(norb, nelecb)
+    if fci_vec.shape != (na, nb):
+        raise ValueError(f"Expected fci_vec shape {(na,nb)}, got {fci_vec.shape}")
+    
+    # build all alpha and beta determinants as sorted tuples of spatial orbitals
+    a_dets = list(combinations(range(norb), neleca))
+    b_dets = list(combinations(range(norb), nelecb))
+    ref_a, ref_b = set(a_dets[0]), set(b_dets[0])
+    
+    a_idxs = []
+    i_idxs = []
+    amps   = []
+    
+    for ia, alpha in enumerate(a_dets):
+        alpha = set(alpha)
+        for ib, beta in enumerate(b_dets):
+            amp = fci_vec[ia, ib]
+            if abs(amp) < thresh:
+                continue
+            
+            beta = set(beta)
+            # holes = in ref but not in det
+            holes_a = sorted(ref_a - alpha)
+            holes_b = sorted(ref_b - beta)
+            # parts = in det but not in ref
+            parts_a = sorted(alpha - ref_a)
+            parts_b = sorted(beta - ref_b)
+            
+            n_exc = len(holes_a) + len(holes_b)
+            # only singles or doubles
+            if not (1 <= n_exc <= 2):
+                continue
+            
+            # spin-orbital indexing
+            holes = holes_a + [h + norb for h in holes_b]
+            parts = parts_a + [p + norb for p in parts_b]
+            
+            a_idxs.append(holes)
+            i_idxs.append(parts)
+            amps.append(amp)
+    
+    return a_idxs, i_idxs, amps
+
+def get_energy(psi, h):
+    '''The internal energy evalutation methods of psi
+    involves ci0, which may cause problem, so here we
+    implement a clean version'''
+    c = psi.dp_ci(psi.ci_f)
+    uc = psi.uop(c)
+    # uc, huc = psi_to_excite.hc_x (psi_to_excite.x, h)[1:3]
+    huc = psi_to_excite.contract_h2 (h, uc)
+    uc, huc = uc.ravel(), huc.ravel()
+    cu = uc.conj ()
+    cuuc = cu.dot (uc)
+    cuhuc = cu.dot (huc)
+    return cuhuc / cuuc
+
+
+def fock_ci_to_cas_ci(ncas, neleacas, nelebcas, uscc_ci):
+    ''' Convert Fock space CI to CASCI, FOCK CI is the tensor product of
+    fragment CIs, of size 2^norb x 2^norb. Many elemnts of FOCK CI
+    are 0 and corresponds to invalid determinants. CASCI is a 
+    c(norb,nelec) x c(norb,nelec) matrix. '''
+    comb_str_a = cistring.make_strings(range(ncas), neleacas)
+    comb_str_b = cistring.make_strings(range(ncas), nelebcas)
+    cas_ci = np.zeros((len(comb_str_a), len(comb_str_b)), dtype=uscc_ci.dtype)
+    for i, bra in enumerate(comb_str_a):
+        for j, ket in enumerate(comb_str_b):
+            cas_ci[i,j] = uscc_ci[bra, ket]
+    return cas_ci
+
 if __name__ == '__main__':
     from pyscf import ao2mo
     from pyscf.mp import MP2
@@ -1290,23 +1382,28 @@ if __name__ == '__main__':
     mp2 = MP2(mf)
     mp2.kernel()
 
+    print("mp2 energy = ", mp2.e_tot)
+
     nmo = mf.mo_coeff.shape[1]
     nocc = mol.nelectron // 2
     c0 = 1.0
     t1 = np.zeros((nocc, nmo-nocc))
     t2 = mp2.t2 
+
     civec = amplitudes_to_cisdvec(c0, t1, t2)
+
     norb = mf.mo_coeff.shape[1]
     nelec = mol.nelectron
     fci_vec = to_fcivec(civec, norb, nelec)
+
     fci_vec /= np.linalg.norm(fci_vec)
+
 
     # first let's verify that the fci energy 
     # equals to the mp2 energy
     mc = mcscf.CASCI(mf, norb, nelec).run()
     e_mc_mp2_ci = cas_energy_of_ci(mc, fci_vec)
-    print("init ci energy = ", e_mc_mp2_ci)
-    print("mp2 energy = ", mp2.e_tot)
+    print("mp2 ci energy = ", e_mc_mp2_ci)
 
     # Then, let's assign the fci to uscc
     # and check that the energy is the same
@@ -1324,8 +1421,10 @@ if __name__ == '__main__':
     psi =  getattr (fcis, 'psi', fcis.build_psi ([fock_vec], norb, norb_f, nelec))
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
+    h = [e_core, h1eff, h2eff]
 
-    energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
+    energy = psi.energy_tot(psi.x, h)
+
     print("psi energy = ", energy)
 
     # Then, let's put psi ci_0 to 0, and use ucc amplitudes to
@@ -1345,20 +1444,25 @@ if __name__ == '__main__':
     print("psi0 energy = ", energy0)
     print("HF energy = ", mf.e_tot)
 
-    a_idxs = []  # smaller indexes
-    i_idxs = []  # larger indexes
     
     # Then we excite psi0 using the MP2 amplitudes
-    for i,j,a,b,I,J,A,B,t in list_rhf_mp2_t2(mp2, topk=1500, thresh=1e-6):
-        print(f"|{I},{J} -> {A},{B}|  (slots i={i},j={j},a={a},b={b})   t2 = {t:+.6e}")
-        a_idxs.append((I, J))
-        i_idxs.append((A, B))
 
+    a_idxs, i_idxs, amps = extract_sd_excitations(fci_vec, norb, nocc, nocc)
     a_idx_np = [np.array(x, dtype=np.uint8) for x in a_idxs]
     i_idx_np = [np.array(x, dtype=np.uint8) for x in i_idxs]
+
     uscc_fsolver = lasuccsd.FCISolver_USCC(mol, a_idx_np, i_idx_np)
     uscc_fsolver.mo_coeff = mf.mo_coeff
 
-    print("t2 = \n", t2)
-    # psi_to_excite =  getattr (uscc_fsolver, 'psi', uscc_fsolver.build_psi ([fock_vec0], norb, norb_f, nelec))
-    # psi = LASUCCTrialState(uscc_fsolver, ci0_f, norb, norb_f, nelec)
+    # print("t2 = \n", t2)
+    psi_to_excite =  getattr (uscc_fsolver, 'psi', uscc_fsolver.build_psi ([fock_vec0], norb, norb_f, nelec))
+    psi_to_excite.x[psi_to_excite.nconstr:psi_to_excite.nconstr+len(amps)] = amps
+    print("psi energy internal mehods = ", psi_to_excite.energy_tot(psi_to_excite.x, [e_core, h1eff, h2eff])) # problem matic
+    print("psi energy = ", get_energy(psi, h))
+
+    # psi_cas_ci = fock_ci_to_cas_ci(norb, nelec // 2, nelec // 2, uc)
+
+    # # verify that the ci created by excitataion amplitudes are 
+    # # exactly the same as the mp2 ci 
+    # print("fcivec = \n", fci_vec)
+    # print("psi_cas_ci = \n", psi_cas_ci)
