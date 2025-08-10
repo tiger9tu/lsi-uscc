@@ -349,7 +349,6 @@ def to_fcivec(cisdvec, norb, nelec, frozen=None):
     nvir = nmo - nocc
     c0, c1, c2 = cisdvec_to_amplitudes(cisdvec, nmo, nocc, copy=False)
     t1addr, t1sign = tn_addrs_signs(nmo, nocc, 1)
-    print("t1addr = \n", t1addr)
 
     na = cistring.num_strings(nmo, nocc)
     fcivec = numpy.zeros((na,na))
@@ -362,10 +361,7 @@ def to_fcivec(cisdvec, norb, nelec, frozen=None):
 
 
     if nocc > 1 and nvir > 1:
-        print("c2\n", c2)
-        print("c2 transposed\n", c2.transpose(1,0,2,3))
         c2aa = c2 - c2.transpose(1,0,2,3)
-        print("c2 - c2trans\n", c2aa)
         ooidx = numpy.tril_indices(nocc, -1)
         vvidx = numpy.tril_indices(nvir, -1)
         c2aa = c2aa[ooidx][:,vvidx[0],vvidx[1]]
@@ -1433,65 +1429,43 @@ if __name__ == '__main__':
     print("HF energy = ", mf.e_tot)
 
     
-    # Then we excite psi0 using the MP2 amplitudes
+    # Then we excite psi0 using the MP2 
+    a_idxs_mp2, i_idxs_mp2, amps_mp2 = amp_spa2spin(t2)
+    a_idxs_mp2 = [np.array(x, dtype=np.uint8) for x in a_idxs_mp2]
+    i_idxs_mp2 = [np.array(x, dtype=np.uint8) for x in i_idxs_mp2]
+    uscc_fcisovler_mp2 = lasuccsd.FCISolver_USCC(mol, a_idxs_mp2, i_idxs_mp2)
+    uscc_fcisovler_mp2.mo_coeff = mf.mo_coeff
 
-    a_idxsfromt2, i_idxsfromt2, ampsfromt2 = amp_spa2spin(t2)
-
-
-    print("amps from mp2 = \n")
-    for a_idx, i_idx, amp in zip(a_idxsfromt2, i_idxsfromt2, ampsfromt2):
-        print(f"a_idx = {a_idx}, i_idx = {i_idx}, amp = {amp}")
-
-    print("t2 = \n", t2)
-    print("Iterating over t2 amplitudes:")
-    for i in range(t2.shape[0]):
-        for j in range(t2.shape[1]):
-            for a in range(t2.shape[2]):
-                for b in range(t2.shape[3]):
-                    print(f"t2[{i},{j},{a + nocc},{b + nocc}] = {t2[i,j,a,b]}")
-
-    print("fcivec unnormalized = \n", fci_vec_unnormalized)
-
-
-
-    print("psi energy = ", psi.energy_tot(psi.x, h))
-
-    a_idxsfromt2 = [np.array(x, dtype=np.uint8) for x in a_idxsfromt2]
-    i_idxsfromt2 = [np.array(x, dtype=np.uint8) for x in i_idxsfromt2]
-    uscc_fsolver2 = lasuccsd.FCISolver_USCC(mol, a_idxsfromt2, i_idxsfromt2)
-    uscc_fsolver2.mo_coeff = mf.mo_coeff
-    # now let's try to directly obtain the excitations 
-    # from the mp2 amplitudes
-    psi_to_excite2 =  getattr (uscc_fsolver2, 'psi', uscc_fsolver2.build_psi ([fock_vec0], norb, norb_f, nelec))
-    psi_to_excite2.x[psi_to_excite2.nconstr:psi_to_excite2.nconstr+len(ampsfromt2)] = ampsfromt2
-    print("psi energy excite from mp2 = ", psi_to_excite2.energy_tot(psi_to_excite2.x, h)) # problem matic
+    psi_mp2 =  getattr (uscc_fcisovler_mp2, 'psi', uscc_fcisovler_mp2.build_psi ([fock_vec0], norb, norb_f, nelec))
+    psi_mp2.x[psi_mp2.nconstr:psi_mp2.nconstr+len(amps_mp2)] = amps_mp2
+    print("psi energy excite from mp2 = ", psi_mp2.energy_tot(psi_mp2.x, h)) # problem matic
+    print("psi with same fci vec energy = ", psi.energy_tot(psi.x, h))
     
 
-
-    _, psi_uc, _, _, _ = psi.hc_x(psi.x, h)
-    psi_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_uc)
-    print("psi_fci_vec = \n", psi_fci_vec)
-
+    # _, psi_uc, _, _, _ = psi.hc_x(psi.x, h)
+    # psi_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_uc)
+    # print("psi_fci_vec = \n", psi_fci_vec)
 
 
-    _, psi_to_excite2_uc, _, _, _ = psi_to_excite2.hc_x(psi_to_excite2.x, h)
-    psi_to_excite2_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_to_excite2_uc)
-    print("psi_to_excite2_fci_vec = \n", psi_to_excite2_fci_vec)
+
+    # _, psi_mp2_uc, _, _, _ = psi_mp2.hc_x(psi_mp2.x, h)
+    # psi_mp2_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_mp2_uc)
+    # print("psi_mp2_fci_vec = \n", psi_mp2_fci_vec)
 
 
-    print("amps from mp2 = \n")
-    for a_idx, i_idx, amp in zip(a_idxsfromt2, i_idxsfromt2, ampsfromt2):
-        print(f"a_idx = {a_idx}, i_idx = {i_idx}, amp = {amp}")
+    # print("amps from mp2 = \n")
+    # for a_idx, i_idx, amp in zip(a_idxs_mp2, i_idxs_mp2, amps_mp2):
+    #     print(f"a_idx = {a_idx}, i_idx = {i_idx}, amp = {amp}")
 
 
-    psi_to_excite3 =  getattr (uscc_fsolver2, 'psi', uscc_fsolver2.build_psi ([fock_vec0], norb, norb_f, nelec))
-    amps_test = np.zeros(len(ampsfromt2))
-    amps_test[0] = ampsfromt2[0]
-    amps_test[1] = ampsfromt2[1]
-    amps_test[2] = ampsfromt2[2]
-    psi_to_excite3.x[psi_to_excite3.nconstr:psi_to_excite3.nconstr+len(ampsfromt2)] = amps_test
-    print("psi energy internal methods = ", psi_to_excite3.energy_tot(psi_to_excite3.x, [e_core, h1eff, h2eff])) # problem matic
+    # psi_to_excite3 =  getattr (uscc_fcisovler_mp2, 'psi', uscc_fcisovler_mp2.build_psi ([fock_vec0], norb, norb_f, nelec))
+    # amps_test = np.zeros(len(amps_mp2))
+    # amps_test[0] = amps_mp2[0]
+    # amps_test[1] = amps_mp2[1]
+    # amps_test[2] = amps_mp2[2]
+    # psi_to_excite3.x[psi_to_excite3.nconstr:psi_to_excite3.nconstr+len(amps_mp2)] = amps_test
+    # print("psi energy internal methods = ", psi_to_excite3.energy_tot(psi_to_excite3.x, [e_core, h1eff, h2eff])) # problem matic
 
-    _, psi_to_excite3_uc, _, _, _ = psi_to_excite3.hc_x(psi_to_excite3.x, h)
-    psi_to_excite3_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_to_excite3_uc)
-    print("psi_to_excite3_fci_vec = \n", psi_to_excite3_fci_vec)
+    # _, psi_to_excite3_uc, _, _, _ = psi_to_excite3.hc_x(psi_to_excite3.x, h)
+    # psi_to_excite3_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_to_excite3_uc)
+    # print("psi_to_excite3_fci_vec = \n", psi_to_excite3_fci_vec)
