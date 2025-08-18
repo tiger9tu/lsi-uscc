@@ -1441,31 +1441,3 @@ if __name__ == '__main__':
     print("psi energy excite from mp2 = ", psi_mp2.energy_tot(psi_mp2.x, h)) # problem matic
     print("psi with same fci vec energy = ", psi.energy_tot(psi.x, h))
     
-
-    # _, psi_uc, _, _, _ = psi.hc_x(psi.x, h)
-    # psi_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_uc)
-    # print("psi_fci_vec = \n", psi_fci_vec)
-
-
-
-    # _, psi_mp2_uc, _, _, _ = psi_mp2.hc_x(psi_mp2.x, h)
-    # psi_mp2_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_mp2_uc)
-    # print("psi_mp2_fci_vec = \n", psi_mp2_fci_vec)
-
-
-    # print("amps from mp2 = \n")
-    # for a_idx, i_idx, amp in zip(a_idxs_mp2, i_idxs_mp2, amps_mp2):
-    #     print(f"a_idx = {a_idx}, i_idx = {i_idx}, amp = {amp}")
-
-
-    # psi_to_excite3 =  getattr (uscc_fcisovler_mp2, 'psi', uscc_fcisovler_mp2.build_psi ([fock_vec0], norb, norb_f, nelec))
-    # amps_test = np.zeros(len(amps_mp2))
-    # amps_test[0] = amps_mp2[0]
-    # amps_test[1] = amps_mp2[1]
-    # amps_test[2] = amps_mp2[2]
-    # psi_to_excite3.x[psi_to_excite3.nconstr:psi_to_excite3.nconstr+len(amps_mp2)] = amps_test
-    # print("psi energy internal methods = ", psi_to_excite3.energy_tot(psi_to_excite3.x, [e_core, h1eff, h2eff])) # problem matic
-
-    # _, psi_to_excite3_uc, _, _, _ = psi_to_excite3.hc_x(psi_to_excite3.x, h)
-    # psi_to_excite3_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_to_excite3_uc)
-    # print("psi_to_excite3_fci_vec = \n", psi_to_excite3_fci_vec)

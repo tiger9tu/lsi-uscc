@@ -1335,20 +1335,6 @@ def extract_sd_excitations(fci_vec, norb, neleca, nelecb, thresh=1e-8):
     
     return a_idxs, i_idxs, amps
 
-def get_energy(psi, h):
-    '''The internal energy evalutation methods of psi
-    involves ci0, which may cause problem, so here we
-    implement a clean version'''
-    c = psi.dp_ci(psi.ci_f)
-    uc = psi.uop(c)
-    # uc, huc = psi_to_excite.hc_x (psi_to_excite.x, h)[1:3]
-    huc = psi_to_excite.contract_h2 (h, uc)
-    uc, huc = uc.ravel(), huc.ravel()
-    cu = uc.conj ()
-    cuuc = cu.dot (uc)
-    cuhuc = cu.dot (huc)
-    return cuhuc / cuuc
-
 
 def fock_ci_to_cas_ci(ncas, neleacas, nelebcas, uscc_ci):
     ''' Convert Fock space CI to CASCI, FOCK CI is the tensor product of
@@ -1454,11 +1440,26 @@ if __name__ == '__main__':
     uscc_fsolver = lasuccsd.FCISolver_USCC(mol, a_idx_np, i_idx_np)
     uscc_fsolver.mo_coeff = mf.mo_coeff
 
-    # print("t2 = \n", t2)
     psi_to_excite =  getattr (uscc_fsolver, 'psi', uscc_fsolver.build_psi ([fock_vec0], norb, norb_f, nelec))
+
     psi_to_excite.x[psi_to_excite.nconstr:psi_to_excite.nconstr+len(amps)] = amps
-    print("psi energy internal mehods = ", psi_to_excite.energy_tot(psi_to_excite.x, [e_core, h1eff, h2eff])) # problem matic
-    print("psi energy = ", get_energy(psi, h))
+
+
+    _, psi_uc, _, _, _ = psi.hc_x(psi.x, h)
+    psi_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_uc)
+    print("psi fci_vec = \n", psi_fci_vec)
+
+    _, psi_to_excite_uc, _, _, _ = psi_to_excite.hc_x(psi_to_excite.x, h)
+    psi_to_excite_fci_vec = fock_ci_to_cas_ci(norb, nocc, nocc, psi_to_excite_uc)
+    print("psi to excite fci_vec = \n", psi_to_excite_fci_vec)
+
+    psi_mp2  =  getattr (uscc_fsolver, 'psi', uscc_fsolver.build_psi ([fock_vec0], norb, norb_f, nelec))
+    psi_mp2.x[psi_mp2.nconstr:psi_mp2.nconstr+len(amps)] = 
+
+
+    # print("psi energy internal mehods = ", psi_to_excite.energy_tot(psi_to_excite.x, [e_core, h1eff, h2eff])) # problem matic
+
+    
 
     # psi_cas_ci = fock_ci_to_cas_ci(norb, nelec // 2, nelec // 2, uc)
 

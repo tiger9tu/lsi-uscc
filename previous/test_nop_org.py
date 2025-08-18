@@ -17,18 +17,8 @@ import pickle
 from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
-import sys
 
 VERBOSE = 0
-if len(sys.argv) > 1:
-    try:
-        AMPLITUDE = float(sys.argv[1])
-        print(f"Using AMPLITUDE argument: {AMPLITUDE}")
-    except ValueError:
-        print("Invalid AMPLITUDE argument, using default value 1.")
-        AMPLITUDE = 1
-else:
-    AMPLITUDE = 1
 
 def flatten(seq: Iterable) -> list:
     result = []
@@ -129,7 +119,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         if( i == nc -1):
             amplitude = 0 # the last one is the reference state
         else:
-            amplitude = AMPLITUDE # we should try different amplitudes
+            amplitude = 1 # we should try different amplitudes
 
         mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
         mc_uscc_ci.mo_coeff = las.mo_coeff
@@ -250,6 +240,7 @@ def test(mol_config, test_config,las, mol, mf):
     mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     # easily hit the maximal memory limit
     mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
+    # print("las.ci = \n", las.ci)
     mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
@@ -543,7 +534,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h4_sto3g, h8_sto3g, h8_631g,  c4_631g, c6_631g, stil_sto3g_90, h10_circle_sto3g]
+    mol_configs = [h4_sto3g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
@@ -564,7 +555,7 @@ if __name__ == "__main__":
 
     tests = [
         noci_test_01,
-        noci_test_001,
+        # noci_test_001,
         # noci_test_0001
     ]
 

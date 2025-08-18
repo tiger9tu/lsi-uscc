@@ -17,8 +17,18 @@ import pickle
 from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
+import sys
 
-VERBOSE = 1
+VERBOSE = 0
+if len(sys.argv) > 1:
+    try:
+        AMPLITUDE = float(sys.argv[1])
+        print(f"Using AMPLITUDE argument: {AMPLITUDE}")
+    except ValueError:
+        print("Invalid AMPLITUDE argument, using default value 1.")
+        AMPLITUDE = 1
+else:
+    AMPLITUDE = 1
 
 def flatten(seq: Iterable) -> list:
     result = []
@@ -102,60 +112,47 @@ def print_excitations(a_idxs, i_idxs):
         print([[int(x) for x in flatten(excitation)]])
 
 
-def nci_test(test_config, mol_config, mol, las, mf, all_ci):
+def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf):
 
-    nfrag = len(las.ncas_sub)
-    nc = 2** nfrag
+    nc = len(a_idxs_selected) + 1
+    # we create ci for each excitation
     if VERBOSE >= 1:
-        print("number of CIs = ", nc)
-    ncas = sum(flatten(las.ncas_sub))
-    nelec = sum(flatten(las.nelecas_sub))
+        print("Number of CIs: ", nc)
 
+    h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+    h2eff = mc_uscc.get_h2eff()
 
-
-
-    mc_uscc0 = None
+    las_ucc_trial_cis = []
     
     min_ci_eng = 99999.9
-    psis = []
     for i in range(nc):
-        # Get binary string of i, padded to nfrag length
-        bin_str = format(i, f'0{nfrag}b')
-        ci = []
-        las_psi_ci = []
-        for frag_idx, bit in enumerate(bin_str):
-            if bit == '1':
-                ci.append(cilas2f(all_ci[1], las.ncas_sub, las.nelecas_sub)[frag_idx])
-                las_psi_ci.append(all_ci[1][frag_idx])
-            else:
-                ci.append(cilas2f(all_ci[0], las.ncas_sub, las.nelecas_sub)[frag_idx])
-                las_psi_ci.append(all_ci[0][frag_idx])
+        if( i == nc -1):
+            amplitude = 0 # the last one is the reference state
+        else:
+            amplitude = AMPLITUDE # we should try different amplitudes
 
-        las.ci = las_psi_ci
-        all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, test_config['epsilon'])
+        mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+        mc_uscc_ci.mo_coeff = las.mo_coeff
+        mc_uscc_ci.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+        mc_uscc_ci.fcisolver.norb_f = mol_config['ncas']
+        fci = mc_uscc_ci.fcisolver
+        las_ci0_f = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas'])
 
-        mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
-        mc_uscc.mo_coeff = las.mo_coeff
-        mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-        mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
-        # easily hit the maximal memory limit
-        # mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
-        lasci_ominus1.GLOBAL_MAX_CYCLE = 5
-        # print("ci = \n", ci)
-        # print("ci0 = \n", cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
-        mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
-        if not mc_uscc.converged:
-            print('Warning: kernel hasn\'t converged')
-        fci = mc_uscc.fcisolver
-        psis.append(fci.build_psi(ci, ncas, las.ncas_sub, nelec))
-        psis[-1].x = mc_uscc.fcisolver.psi.x
+        norb = sum(mol_config['ncas']) # not sure about this
+        nelec = sum(mol_config['nelecas']) # not sure about this
+        norb_f = getattr (fci, 'norb_f', [norb])
+        psi =  getattr (fci, 'psi', fci.build_psi (las_ci0_f, norb, norb_f, nelec, frozen=test_config['frozen']))
+        
+        if i < nc - 1:
+            psi.x[psi.nconstr + i] = amplitude
 
-        if i == 0:
-            mc_uscc0 = mc_uscc
+        energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
+        if energy < min_ci_eng:
+            min_ci_eng = energy
 
-    h1eff,e_core= mc_uscc0.get_h1eff(mc_uscc0.mo_coeff)
-    h2eff = mc_uscc0.get_h2eff()
-
+        las_ucc_trial_cis.append(psi)
+        
+    
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
     h = [e_core, h1eff, h2eff]
@@ -166,7 +163,7 @@ def nci_test(test_config, mol_config, mol, las, mf, all_ci):
     S_inc = np.zeros((0, 0), dtype=np.complex128)
     threshold = 1e7  # You can adjust this threshold as needed
 
-    for idx, psi in enumerate(psis):
+    for idx, psi in enumerate(las_ucc_trial_cis):
         # Build S matrix for current selection + this CI
         n_sel = len(selected_indices)
         S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
@@ -174,8 +171,8 @@ def nci_test(test_config, mol_config, mol, las, mf, all_ci):
         if n_sel > 0:
             S_new[:n_sel, :n_sel] = S_inc
             for j, jidx in enumerate(selected_indices):
-                S_new[n_sel, j] = get_Sij(psi, psis[jidx], h)
-                S_new[j, n_sel] = get_Sij(psis[jidx], psi, h)
+                S_new[n_sel, j] = get_Sij(psi, las_ucc_trial_cis[jidx], h)
+                S_new[j, n_sel] = get_Sij(las_ucc_trial_cis[jidx], psi, h)
         # Diagonal element
         S_new[n_sel, n_sel] = get_Sij(psi, psi, h)
         # Check condition number
@@ -193,7 +190,7 @@ def nci_test(test_config, mol_config, mol, las, mf, all_ci):
     H = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
     for i, idx_i in enumerate(selected_indices):
         for j, idx_j in enumerate(selected_indices):
-            S[i, j], H[i, j] = get_Sij_Hij(psis[idx_i], psis[idx_j], h)
+            S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[idx_i], las_ucc_trial_cis[idx_j], h)
 
     if VERBOSE >= 0:
         print(f"Selected {nc_sel} CIs out of {nc} total CIs")
@@ -205,20 +202,65 @@ def nci_test(test_config, mol_config, mol, las, mf, all_ci):
         print("H matrix:")
         print_matrix(H)
 
-    min_ci_eng = np.min(np.diag(H)).real
     # print("min_ci_eng: ", min_ci_eng)
     eigvals, eigvecs = eigh(H, S)
-
     return eigvals[0], eigvecs[0], min_ci_eng   # Take the lowest eigenvalue as the energy
 
 
 
-def test(mol_config, test_config, las, mol, mf, all_ci):
+def test(mol_config, test_config,las, mol, mf):
     result = {}
+    all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
+    if test_config['grad_test']:
+        result['tot_g'] = all_g
+
+    a_idxs_selected_nn = []
+    i_idxs_selected_nn = []
+    
+    nn_g = []
+    if(test_config['nn']):
+        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, mol_config)
+        if test_config['grad_test']:
+            result['nn_g'] = nn_g
+
+    result['tot_excitation_count'] = len(a_idxs_selected_all)
+    result['excitation_count_nn'] = len(a_idxs_selected_nn)
+
+    #Computing energy through the LAS-UCC kernel using selected excitations
+    #==========================================================================================
+    
+    a_idxs_selected = None
+    i_idxs_selected = None
+
+    if test_config['nn']:
+        a_idxs_selected = a_idxs_selected_nn
+        i_idxs_selected = i_idxs_selected_nn
+    else:
+        a_idxs_selected = a_idxs_selected_all
+        i_idxs_selected = i_idxs_selected_all
+    
+    if VERBOSE >= 2:
+        print("All selected excitations:")
+        print_excitations(a_idxs_selected, i_idxs_selected)
+
+    mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    mc_uscc.mo_coeff = las.mo_coeff
+    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
+    # easily hit the maximal memory limit
+    mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
+    mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
+    if not mc_uscc.converged:
+        print('Warning: kernel hasn\'t converged')
+    
+    if VERBOSE >= 1:
+        print("MC-USCC amplitudes: ", mc_uscc.fcisolver.psi.x)
+
+    result['las_uscc_eng'] =  mc_uscc.e_tot 
    
-    # if test_config['noci_test']:
-    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(test_config, mol_config, mol,las, mf, all_ci)
+    if test_config['noci_test']:
+        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
     
     return result
    
@@ -239,7 +281,6 @@ def batch_test(mol_config, test_configs):
         charge = mol_config['charge']
     if 'spin' in mol_config:
         spin = mol_config['spin']
-    
 
     mol = gto.M(atom=mol_config['xyz'], basis=mol_config['basis'], symmetry = symmetry,
         charge = charge, spin = spin,verbose=0,output=None)
@@ -252,19 +293,15 @@ def batch_test(mol_config, test_configs):
     #===================================
     las = LASSCF(mf, mol_config['ncas'], mol_config['nelecas'], spin_sub=mol_config['spinsub'], ouput=None)
     mo_loc = las.localize_init_guess(mol_config['frag_atom_list'], mf.mo_coeff)
-
-    las.bin_excite = True
-    las_e_tot, las_e_states, las_ci, las_mo_coeff, las_mo_energy, las_h2eff_sub, las_veff = las.kernel(mo_loc)
-
-    las.ci = las.ci[0] # notice this
-   
+    las.kernel(mo_loc)
+    
     ref = mcscf.CASSCF(mf, sum(mol_config['ncas']), sum(mol_config['nelecas'])).run() # = FCI
 
     # mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
     # mc_uscc.mo_coeff = las.mo_coeff
     for test_config in test_configs:
         
-        result = test(mol_config, test_config, las, mol, mf, las_ci)
+        result = test(mol_config, test_config, las, mol, mf)
         results.append(result)
     
     return results, ref.e_tot, las.e_tot
@@ -302,8 +339,7 @@ if __name__ == "__main__":
     H      1.674032054647   5.908472292654  -0.197836732111
     '''
 
-    with open('../data_dir.txt', 'r', encoding='utf-8') as f:
-        data_dir = f.read().strip()
+    data_dir = '/home/jinx/repo/qchem/las_uccsd_data'
 
     with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
@@ -507,21 +543,17 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    # Read molecule config names from config.txt and map to variables
-    config_file = '../config.txt'
-    with open(config_file, 'r', encoding='utf-8') as f:
-        config_names = [line.strip() for line in f if line.strip()]
-
-    # Map string names to actual variables in the current namespace
-    mol_configs = []
-    for name in config_names:
-        if name in locals():
-            mol_configs.append(locals()[name])
-        else:
-            print(f"Warning: config '{name}' not found.")
+    mol_configs = [c6_631g, stil_sto3g_90, h10_circle_sto3g]
 
     noci_test_01 : TestConfig = {
-        'epsilon': 0.01
+        'epsilon': 0.01,
+        'nn': False,
+        'max_nx': 10000,
+        'min_nc': 3,
+        'init_method': 'uscc_opt',
+        'frozen': 'CI',
+        'grad_test': False,
+        'noci_test': True
     }
         
     noci_test_001 = copy.deepcopy(noci_test_01)
@@ -530,11 +562,12 @@ if __name__ == "__main__":
     noci_test_0001 = copy.deepcopy(noci_test_01)
     noci_test_0001['epsilon'] = 0.0001
 
-    with open('../eps.txt', 'r', encoding='utf-8') as f:
-        n_eps = int(f.read().strip())
+    tests = [
+        noci_test_01,
+        noci_test_001,
+        # noci_test_0001
+    ]
 
-    all_tests = [noci_test_01, noci_test_001, noci_test_0001]
-    tests = all_tests[:n_eps] if n_eps < len(all_tests) else all_tests
 
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")
@@ -543,7 +576,7 @@ if __name__ == "__main__":
         print(f"Reference energy: {ref_energy:.17f}")
         print(f"MC-LAS energy: {las_energy:.17f}")
         for result in mol_results:
-            # print(f"Total excitations: {result['tot_excitation_count']}")
+            print(f"Total excitations: {result['tot_excitation_count']}")
             # print(f"NN excitations: {result['excitation_count_nn']}")
 
             if 'las_uscc_eng' in result:

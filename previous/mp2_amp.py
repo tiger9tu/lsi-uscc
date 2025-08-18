@@ -15,10 +15,13 @@ from mrh.exploratory.citools import grad, lasci_ominus1
 # -------------------------------------------------------------
 # 1.  Build a tiny test system (water, STO-3G)
 # -------------------------------------------------------------
-xyz = '''H 0.0 0.0 0.0;
-            H 1.0 0.0 0.0;
-            H 0.2 1.6 0.1;
-            H 1.159166 1.3 -0.1'''
+xyz =  '''    H      0.000000000000   0.000000000000   0.000000000000
+    H      1.000000000000   0.000000000000   0.000000000000
+    H      0.273746762116   2.195450598147   0.100000000000
+    H      1.232912762116   1.895450598147  -0.100000000000
+    H      0.507178110854   4.193780995243   0.049334760036
+    H      1.506140937609   3.988021397347  -0.049334760036
+    '''
 mol = gto.M (atom = xyz, basis = 'sto-3g', output='h4_sto3g.log',
     verbose=0)
 mf = scf.RHF (mol).run ()
@@ -51,23 +54,24 @@ print(f"\nTotal UCC parameters: {ucc_vec.size:d}")
 # -------------------------------------------------------------
 nocc = mp2.nocc
 nvir = t2.shape[2]
-if not isinstance(t2, tuple):
-    first_double = nocc * nvir        # singles occupy the first slice
+# if not isinstance(t2, tuple):
+first_double = nocc * nvir        # singles occupy the first slice
 
-    print("\nIndex :  |  Excitation  |  Amplitude")
-    print("-----------------------------------------------")
-    idx = first_double
-    for i in range(nocc):
-        for j in range(i+1, nocc):
-            for a in range(nvir):
-                for b in range(a+1, nvir):
-                    amp = ucc_vec[idx]
-                    print("t2[{:d},{:d},{:d},{:d}] = {}".format(i, j, a, b, amp))
-                    print(f"{idx:5d} : | {i:1d},{j:1d} → {a+nocc},{b+nocc} |  {amp:+.6e}")
-                    idx += 1
+print("mp2 energy : {:.12f} Eh".format(mp2.e_tot))
+
+print("\nIndex :  |  Excitation  |  Amplitude")
+print("-----------------------------------------------")
+idx = first_double
+for i in range(nocc):
+    for j in range(i+1, nocc):
+        for a in range(nvir):
+            for b in range(a+1, nvir):
+                amp = ucc_vec[idx]
+                print(f"{idx:5d} : | {i:1d},{j:1d} → {a+nocc},{b+nocc} |  {amp:+.6e}")
+                idx += 1
 
 
-def set_x_amplitudes(a_idxs, i_idxs, amplitudes, init_amplitudes):
+def get_x_amplitudes(a_idxs, i_idxs, amplitudes, init_amplitudes):
     """Set the x amplitudes in the FCISolver's psi object. 
     The init amplitudes are MP2 amplitudes, which is for all double
     excitations, but we only set for selected ones in a_idxs and i_idxs."""
@@ -87,16 +91,38 @@ for i in range(nocc):
     for j in range(i+1, nocc):
         for a in range(nvir):
             for b in range(a+1, nvir):
-                a_idxs.append((a, b))
+                a_idxs.append((a + nocc, b + nocc))
                 i_idxs.append((i, j))
 
-mc_uscc = mcscf.CASCI(mf, 4, 4)
+mc_uscc = mcscf.CASCI(mf, 6, 6)
 mc_uscc.mo_coeff = mf.mo_coeff
 
-lasci_ominus1.GLOBAL_MAX_CYCLE = 0
-mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
 
+print("a_idxs = ", a_idxs)
+print("i_idxs = ", i_idxs)
+
+aidx_formated = [np.array(item, dtype=np.uint8) for item in a_idxs]
+iidx_formated = [np.array(item, dtype=np.uint8) for item in i_idxs]
+mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, aidx_formated, iidx_formated)
+mc_uscc.fcisolver.norb_f = [2, 2, 2]  # (2e, 2o) excitations
+mc_uscc.fcisolver.frozen = "CI"
 mc_uscc.kernel()
+
+psi = mc_uscc.fcisolver.psi
+
+print("optimized amplitudes  =", psi.x)
 print("mc_uscc.e_tot = ", mc_uscc.e_tot)
 
+h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+h2eff = mc_uscc.get_h2eff()
+h = [e_core, h1eff, h2eff]
 
+psi_eng = psi.energy_tot(psi.x, h)
+print("psi energy = ", psi_eng)
+
+
+psi.x[1] = -0.06232327058193741  # Set the first x amplitude to a mp2 value
+
+print("setting psi.x[1] to MP2 value = ", psi.x[1])
+print("psi energy after setting = ", psi.energy_tot(psi.x, h))
