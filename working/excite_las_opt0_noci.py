@@ -529,7 +529,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h4_sto3g]
+    mol_configs = [h4_sto3g, c4_631g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01

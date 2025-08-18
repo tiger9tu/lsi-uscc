@@ -140,7 +140,10 @@ def nci_test(test_config, mol_config, mol, las, mf, all_ci):
         mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
         # easily hit the maximal memory limit
         # mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
-        mc_uscc.kernel(ci0 = cilas2f(ci, mol_config['ncas'], mol_config['nelecas']))
+        lasci_ominus1.GLOBAL_MAX_CYCLE = 5
+        # print("ci = \n", ci)
+        # print("ci0 = \n", cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
+        mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
         if not mc_uscc.converged:
             print('Warning: kernel hasn\'t converged')
         fci = mc_uscc.fcisolver
@@ -503,7 +506,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h4_sto3g]
+    mol_configs = [c6_631g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01
