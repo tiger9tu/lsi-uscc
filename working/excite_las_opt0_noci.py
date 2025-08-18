@@ -325,7 +325,8 @@ if __name__ == "__main__":
     H      1.674032054647   5.908472292654  -0.197836732111
     '''
 
-    data_dir = '/home/jinx/repo/qchem/las_uccsd_data'
+    with open('../data_dir.txt', 'r', encoding='utf-8') as f:
+        data_dir = f.read().strip()
 
     with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
@@ -529,7 +530,17 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h4_sto3g, c4_631g]
+    config_file = '../config.txt'
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config_names = [line.strip() for line in f if line.strip()]
+
+    # Map string names to actual variables in the current namespace
+    mol_configs = []
+    for name in config_names:
+        if name in locals():
+            mol_configs.append(locals()[name])
+        else:
+            print(f"Warning: config '{name}' not found.")
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01
@@ -541,12 +552,12 @@ if __name__ == "__main__":
     noci_test_0001 = copy.deepcopy(noci_test_01)
     noci_test_0001['epsilon'] = 0.0001
 
-    tests = [
-        noci_test_01,
-        # noci_test_001,
-        # noci_test_0001
-    ]
 
+    with open('../eps.txt', 'r', encoding='utf-8') as f:
+        n_eps = int(f.read().strip())
+
+    all_tests = [noci_test_01, noci_test_001, noci_test_0001]
+    tests = all_tests[:n_eps] if n_eps < len(all_tests) else all_tests
 
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")

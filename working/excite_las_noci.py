@@ -117,7 +117,6 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
 
     fci = mc_uscc.fcisolver
     x = fci.psi.x
-    # print("x = ", x)
     
     min_ci_eng = 99999.9
     psis = []
@@ -233,8 +232,7 @@ def test(mol_config, test_config, las, mol, mf, all_ci):
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
     mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
     # easily hit the maximal memory limit
-    
-    mc_uscc.fcisolver.frozen = 'CI'
+    # mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
     mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
@@ -327,7 +325,8 @@ if __name__ == "__main__":
     H      1.674032054647   5.908472292654  -0.197836732111
     '''
 
-    data_dir = '/home/jinx/repo/qchem/las_uccsd_data'
+    with open('../data_dir.txt', 'r', encoding='utf-8') as f:
+        data_dir = f.read().strip()
 
     with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
@@ -531,10 +530,20 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [h4_sto3g, c4_631g]
+    config_file = '../config.txt'
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config_names = [line.strip() for line in f if line.strip()]
+
+    # Map string names to actual variables in the current namespace
+    mol_configs = []
+    for name in config_names:
+        if name in locals():
+            mol_configs.append(locals()[name])
+        else:
+            print(f"Warning: config '{name}' not found.")
 
     noci_test_01 : TestConfig = {
-        'epsilon': 10 # not optimizing
+        'epsilon': 10
     }
         
     noci_test_001 = copy.deepcopy(noci_test_01)
@@ -543,12 +552,12 @@ if __name__ == "__main__":
     noci_test_0001 = copy.deepcopy(noci_test_01)
     noci_test_0001['epsilon'] = 0.0001
 
-    tests = [
-        noci_test_01,
-        # noci_test_001,
-        # noci_test_0001
-    ]
 
+    with open('../eps.txt', 'r', encoding='utf-8') as f:
+        n_eps = int(f.read().strip())
+
+    all_tests = [noci_test_01, noci_test_001, noci_test_0001]
+    tests = all_tests[:n_eps] if n_eps < len(all_tests) else all_tests
 
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")
