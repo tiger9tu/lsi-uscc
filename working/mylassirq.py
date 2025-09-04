@@ -141,8 +141,8 @@ e_roots, si_rq = lsi.kernel()
 print ("LASSI[{},{}]energy =".format (r,q), e_roots[0])
 molden.from_lassi (las, 'c2h4n4_lassirq_631g.molden', si=si_rq)
 
-print ("SI vector (LASSI[{},{}]):".format (r,q))
-print (si_rq[:,0])
+# print ("SI vector (LASSI[{},{}]):".format (r,q))
+# print (si_rq)
 
 print("\n\n############# LASSI TEST ##############")
 
