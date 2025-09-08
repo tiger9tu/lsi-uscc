@@ -17,13 +17,17 @@ def main():
     # Define molecule structure
     mol_func = lambda charge, spin, basis: struct(charge, spin, basis)
     
-    # Initialize LASSI-VQE calculation
+    # Initialize LASSI-VQE calculation with default state averaging parameters
     lassi_vqe = LASSI_VQE(
         mol=mol_func,
         ncas_sub=(3, 3),
         nelec_sub=((2, 1), (1, 2)),
         basis='6-31g',
         output_file='c2h4n4_lassi_vqe.log'
+        # Using default state averaging parameters:
+        # state_weights=[0.5, 0.5], spins=[[1, -1], [-1, 1]], 
+        # smults=[[2, 2], [2, 2]], charges=[[0, 0], [0, 0]]
+        # extended_state_weights=[0.5, 0.5, 0, 0], etc.
     )
     
     # Run the complete calculation
@@ -60,13 +64,18 @@ def run_step_by_step_example():
     
     mol_func = lambda charge, spin, basis: struct(charge, spin, basis)
     
-    # Initialize
+    # Initialize with custom state averaging parameters
     lassi_vqe = LASSI_VQE(
         mol=mol_func,
         ncas_sub=(3, 3),
         nelec_sub=((2, 1), (1, 2)),
         basis='6-31g',
-        output_file='c2h4n4_step_by_step.log'
+        output_file='c2h4n4_step_by_step.log',
+        # Custom state averaging parameters for demonstration
+        state_weights=[0.6, 0.4],
+        spins=[[1, -1], [-1, 1]],
+        smults=[[2, 2], [2, 2]],
+        charges=[[0, 0], [0, 0]]
     )
     
     # Step 1: Setup molecule
@@ -109,6 +118,47 @@ def run_step_by_step_example():
     return energies, lassi_energies
 
 
+def custom_parameters_example():
+    """Example showing fully customized state averaging parameters"""
+    
+    print("\n" + "="*60)
+    print("CUSTOM PARAMETERS EXAMPLE")
+    print("="*60)
+    
+    mol_func = lambda charge, spin, basis: struct(charge, spin, basis)
+    
+    # Initialize with fully custom state averaging parameters
+    lassi_vqe = LASSI_VQE(
+        mol=mol_func,
+        ncas_sub=(3, 3),
+        nelec_sub=((2, 1), (1, 2)),
+        basis='6-31g',
+        output_file='c2h4n4_custom.log',
+        # Custom initial state averaging
+        state_weights=[0.7, 0.3],
+        spins=[[1, -1], [-1, 1]],
+        smults=[[2, 2], [2, 2]],
+        charges=[[0, 0], [0, 0]],
+        # Custom extended state averaging
+        extended_state_weights=[0.4, 0.4, 0.1, 0.1],
+        extended_spins=[[1, -1], [-1, 1], [0, 0], [0, 0]],
+        extended_smults=[[2, 2], [2, 2], [1, 1], [1, 1]],
+        extended_charges=[[0, 0], [0, 0], [-1, 1], [1, -1]]
+    )
+    
+    print("Demonstrating custom state averaging parameters:")
+    print(f"Initial state weights: {lassi_vqe.state_weights}")
+    print(f"Extended state weights: {lassi_vqe.extended_state_weights}")
+    print(f"Extended charges: {lassi_vqe.extended_charges}")
+    
+    # Just run the setup steps to show the parameters are working
+    lassi_vqe.setup_molecule()
+    lassi_vqe.setup_lasscf_reference()
+    print("Custom parameters successfully applied!")
+    
+    return lassi_vqe
+
+
 if __name__ == "__main__":
     # Run full calculation
     print("Running full LASSI-VQE calculation...")
@@ -119,3 +169,9 @@ if __name__ == "__main__":
     if run_step_by_step:
         print("\n\nRunning step-by-step example...")
         step_energies, step_lassi = run_step_by_step_example()
+    
+    # Optionally run custom parameters example
+    run_custom_example = True  # Set to True to run custom parameters example
+    if run_custom_example:
+        print("\n\nRunning custom parameters example...")
+        custom_vqe = custom_parameters_example()
