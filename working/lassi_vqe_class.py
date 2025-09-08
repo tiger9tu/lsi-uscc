@@ -27,9 +27,9 @@ class LASSI_VQE:
     """
     
     def __init__(self, mol, ncas_sub, nelec_sub, basis='6-31g', 
-                 output_file=None, verbose=lib.logger.INFO):
+                 output_file=None, verbose=lib.logger.INFO, r=1, q=1):
         """
-        Initialize LASSI-VQE calculation
+        Initialize LASSI-VQE calculation using LASSIrq for automatic charge transfer state generation
         
         Args:
             mol: PySCF molecule object or structure function
@@ -38,6 +38,8 @@ class LASSI_VQE:
             basis: basis set name
             output_file: output log file name
             verbose: verbosity level
+            r: charge transfer parameter for LASSIrq (default: 1)
+            q: charge transfer parameter for LASSIrq (default: 1)
         """
         self.mol = mol
         self.ncas_sub = ncas_sub
@@ -46,13 +48,16 @@ class LASSI_VQE:
         self.output_file = output_file
         self.verbose = verbose
         
+        # LASSIrq parameters for automatic charge transfer state generation
+        self.r = r  # charge transfer parameter
+        self.q = q  # charge transfer parameter
+        
         # Initialize calculation objects
         self.mf = None
         self.las = None
-        self.las2 = None
+        self.lsi = None
         self.mc_casci = None
         self.mc_uscc = None
-        self.lsi = None
         
         # Results storage
         self.e_states = None
@@ -78,33 +83,33 @@ class LASSI_VQE:
         self.mf = scf.RHF(self.mol).run()
         print(f"RHF energy: {self.mf.e_tot}")
         
-    def setup_lasscf_reference(self, mo_guess=None):
+    def setup_lasscf_reference(self, mo_guess=None, frag_atom_list=None):
         """
-        Setup reference LASSCF calculation with initial state averaging
+        Setup reference LASSCF calculation without state averaging
         
         Args:
             mo_guess: initial molecular orbital guess (optional)
+            frag_atom_list: fragment atom list for localization (optional)
         """
-        # Initial LASSCF with basic state averaging
+        # Basic LASSCF without state averaging
         self.las = LASSCF(self.mf, self.ncas_sub, self.nelec_sub)
-        self.las = self.las.state_average([0.5, 0.5],
-            spins=[[1, -1], [-1, 1]],
-            smults=[[2, 2], [2, 2]],    
-            charges=[[0, 0], [0, 0]])
         
         if mo_guess is not None:
             mo = mo_guess
+        elif frag_atom_list is not None:
+            # Use provided fragment atom list for localization
+            mo = self.las.localize_init_guess(frag_atom_list, self.mf.mo_coeff)
         else:
-            # Default MO sorting and localization
+            # Default MO sorting and localization for c2h4n4 molecule
             mo = self.las.sort_mo([16, 18, 22, 23, 24, 26])
             mo = self.las.localize_init_guess((list(range(5)), list(range(5, 10))), mo)
         
         self.las.kernel(mo)
-        print(f"LASSCF({self.ncas_sub},{self.ncas_sub}) energy = {self.las.e_tot}")
+        print(f"LASSCF({self.ncas_sub}) energy = {self.las.e_tot}")
         
         # Save reference orbitals
         if self.output_file:
-            molden_file = self.output_file.replace('.log', '_lasscf66_631g.molden')
+            molden_file = self.output_file.replace('.log', '_lasscf_ref.molden')
             molden.from_lasscf(self.las, molden_file)
     
     def setup_casci_reference(self):
@@ -122,85 +127,75 @@ class LASSI_VQE:
             molden_file = self.output_file.replace('.log', '_casscf66_631g.molden')
             molden.from_mcscf(self.mc_casci, molden_file, cas_natorb=True)
     
-    def setup_charge_transfer_states(self):
+    def setup_lassirq(self):
         """
-        Setup extended state averaging including charge transfer states
+        Setup LASSIrq for automatic charge transfer state generation
         """
-        # Extended state averaging with charge transfer states
-        self.las2 = self.las.state_average([0.5, 0.5, 0, 0],
-            spins=[[1, -1], [-1, 1], [0, 0], [0, 0]],
-            smults=[[2, 2], [2, 2], [1, 1], [1, 1]],    
-            charges=[[0, 0], [0, 0], [-1, 1], [1, -1]])
+        # Use LASSIrq for automatic CT state generation
+        self.lsi = lassi.LASSIrq(self.las, r=self.r, q=self.q)
+        e_roots, si_rq = self.lsi.kernel()
         
-        self.las2.lasci()
-        self.las2.dump_spaces()
+        print(f"LASSIrq[{self.r},{self.q}] setup completed")
+        print(f"Number of states generated: {len(e_roots)}")
+        print(f"LASSIrq ground state energy: {e_roots[0]:.10f}")
         
-        # Get effective Hamiltonians and energies
-        h2eff_sub, veff = self.las2.kernel(self.las.mo_coeff)[-2:]
-        self.e_states = self.las2.e_states
-        
-        print("Charge transfer states setup completed")
-        return self.e_states
+        return e_roots, si_rq
     
     def compute_effective_hamiltonian(self):
         """
-        Compute effective Hamiltonian matrix elements between LAS states
+        Compute effective Hamiltonian matrix elements between LASSIrq states
         """
-        ncore, ncas = self.las2.ncore, self.las2.ncas
+        if self.lsi is None:
+            raise ValueError("LASSIrq not setup. Call setup_lassirq() first.")
+            
+        ncore, ncas = self.las.ncore, self.las.ncas
         nocc = ncore + ncas
-        mo_coeff = self.las2.mo_coeff
+        mo_coeff = self.las.mo_coeff
         mo_core = mo_coeff[:, :ncore]
         mo_cas = mo_coeff[:, ncore:nocc]
         
         # Get core energy and integrals
-        h2eff_sub, veff = self.las2.kernel(self.las.mo_coeff)[-2:]
-        e0 = (self.las2._scf.energy_nuc() + 
-              2 * (((self.las2._scf.get_hcore() + veff.c/2) @ mo_core) * mo_core).sum())
+        h2eff_sub, veff = self.las.kernel(self.las.mo_coeff)[-2:]
+        e0 = (self.las._scf.energy_nuc() + 
+              2 * (((self.las._scf.get_hcore() + veff.c/2) @ mo_core) * mo_core).sum())
         
-        h1 = mo_cas.conj().T @ (self.las2._scf.get_hcore() + veff.c) @ mo_cas
+        h1 = mo_cas.conj().T @ (self.las._scf.get_hcore() + veff.c) @ mo_cas
         h2 = h2eff_sub[ncore:nocc].reshape(ncas*ncas, ncas * (ncas+1) // 2)
         h2 = lib.numpy_helper.unpack_tril(h2).reshape(ncas, ncas, ncas, ncas)
         
-        # Get electron configurations for each state
-        nelec_fr = []
-        for fcibox, nelec in zip(self.las2.fciboxes, self.las2.nelecas_sub):
-            ne = sum(nelec)
-            nelec_fr.append([_unpack_nelec(fcibox._get_nelec(solver, ne)) 
-                           for solver in fcibox.fcisolvers])
+        # Get electron configurations for each state from LASSIrq
+        nelec_fr = self.lsi.get_nelec_frs()
         
         print("nelec_fr =", nelec_fr)
         
         # Compute effective Hamiltonian matrix elements
         self.ham_eff, self.s2_eff, self.ovlp_eff = self._slow_ham(
-            self.las2.mol, h1, h2, self.las2.ci, self.las2.ncas_sub, nelec_fr)
+            self.las.mol, h1, h2, self.lsi.ci, self.las.ncas_sub, nelec_fr)
         
         print("ham_eff\n", self.ham_eff)
         print("\novlap_eff\n", self.ovlp_eff)
-        print("Convergence check:", self.las.converged, 
-              self.e_states - (e0 + np.diag(self.ham_eff)))
         
         return self.ham_eff, self.ovlp_eff
     
     def build_vqe_wavefunctions(self, max_cycle=30, conv_tol=1e-6):
         """
-        Build and optimize VQE wavefunctions for each LAS state using UCCSD parameterization
+        Build and optimize VQE wavefunctions for each LASSIrq state using UCCSD parameterization
         
         Args:
             max_cycle: Maximum number of VQE optimization cycles
             conv_tol: Convergence tolerance for VQE optimization
         """
-        nstates = 4
+        if self.lsi is None:
+            raise ValueError("LASSIrq not setup. Call setup_lassirq() first.")
+            
+        nstates = len(self.lsi.ci[0])
         self.psis = []
         self.vqe_energies = []
-        ncas = sum(self.las2.ncas_sub)
+        ncas = sum(self.las.ncas_sub)
         nelecas = sum([sum(ne) for ne in self.nelec_sub])
         
-        # Get electron configurations
-        nelec_fr = []
-        for fcibox, nelec in zip(self.las2.fciboxes, self.las2.nelecas_sub):
-            ne = sum(nelec)
-            nelec_fr.append([_unpack_nelec(fcibox._get_nelec(solver, ne)) 
-                           for solver in fcibox.fcisolvers])
+        # Get electron configurations from LASSIrq
+        nelec_fr = self.lsi.get_nelec_frs()
         
         print("Building and optimizing VQE wavefunctions for", nstates, "states")
         print(f"VQE settings: max_cycle={max_cycle}, conv_tol={conv_tol}")
@@ -209,16 +204,15 @@ class LASSI_VQE:
             print(f"\n--- Optimizing State {i} ---")
             
             # Extract CI coefficients for state i
-            ci = [[self.las2.ci[fragj][i]] for fragj in range(len(self.las2.ci))]
+            ci = [[self.lsi.ci[fragj][i]] for fragj in range(len(self.lsi.ci))]
             nelec_sub = [nelec_fr[fragj][i] for fragj in range(len(nelec_fr))]
             nelecas_sub = [sum(nelec) for nelec in nelec_sub]
             
             print(f"State {i}: nelec_sub = {nelec_sub}, nelecas = {nelecas_sub}")
             
             # Create temporary LASSCF object for gradient calculation
-            from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
-            tmplas = LASSCF(self.mf, self.las2.ncas_sub, nelec_sub)
-            tmplas.mo_coeff = self.las2.mo_coeff
+            tmplas = LASSCF(self.mf, self.las.ncas_sub, nelec_sub)
+            tmplas.mo_coeff = self.las.mo_coeff
             tmplas.ci = ci
             
             # Get gradient information for VQE optimization
@@ -231,9 +225,9 @@ class LASSI_VQE:
             
             # Setup VQE solver for this state
             mc_uscc = mcscf.CASCI(self.mf, ncas, nelecas)
-            mc_uscc.mo_coeff = self.las2.mo_coeff
+            mc_uscc.mo_coeff = self.las.mo_coeff
             mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(self.mol, a_idxs_selected, i_idxs_selected)
-            mc_uscc.fcisolver.norb_f = self.las2.ncas_sub
+            mc_uscc.fcisolver.norb_f = self.las.ncas_sub
             
             # Set VQE optimization parameters
             lasci_ominus1.GLOBAL_MAX_CYCLE = max_cycle
@@ -242,7 +236,7 @@ class LASSI_VQE:
             
             # Run VQE optimization
             print(f"Running VQE kernel optimization...")
-            ci0 = self._cilas2f(ci, self.las2.ncas_sub, nelec_sub)
+            ci0 = self._cilas2f(ci, self.las.ncas_sub, nelec_sub)
             e_vqe = mc_uscc.kernel(ci0=ci0)[0]
             
             # Store optimized wavefunction and energy
@@ -304,40 +298,40 @@ class LASSI_VQE:
         
         return self.final_energies, self.final_eigenvectors
     
-    def compare_with_lassi(self):
+    def get_lassirq_results(self):
         """
-        Compare results with standard LASSI calculation
+        Get LASSIrq results for comparison
         """
-        if self.las2 is None:
-            raise ValueError("LAS calculation not performed. Call setup_charge_transfer_states() first.")
+        if self.lsi is None:
+            raise ValueError("LASSIrq not setup. Call setup_lassirq() first.")
         
-        self.lsi = lassi.LASSI(self.las2)
         e_roots, si_vectors = self.lsi.kernel()
         
-        print("Standard LASSI energies:", e_roots)
-        print("Standard LASSI ground state vector:", si_vectors[:, 0])
+        print(f"LASSIrq[{self.r},{self.q}] energies:", e_roots)
+        print(f"LASSIrq ground state vector:", si_vectors[:, 0])
         
         if self.final_energies is not None:
             print("\nEnergy comparison:")
-            print("VQE-LASSI:", self.final_energies)
-            print("Standard LASSI:", e_roots)
-            print("Difference (VQE - LASSI):", self.final_energies - e_roots)
+            print("VQE-LASSIrq:", self.final_energies)
+            print(f"LASSIrq[{self.r},{self.q}]:", e_roots)
+            print("Difference (VQE - LASSIrq):", self.final_energies - e_roots)
         
         return e_roots, si_vectors
     
-    def run_full_calculation(self, mo_guess=None, vqe_max_cycle=5, vqe_conv_tol=1e-6):
+    def run_full_calculation(self, mo_guess=None, frag_atom_list=None, vqe_max_cycle=5, vqe_conv_tol=1e-6):
         """
-        Run the complete LASSI-VQE calculation
+        Run the complete LASSIrq-VQE calculation
         
         Args:
             mo_guess: initial molecular orbital guess (optional)
-            vqe_max_cycle: maximum VQE optimization cycles (default: 30)
+            frag_atom_list: fragment atom list for localization (optional)
+            vqe_max_cycle: maximum VQE optimization cycles (default: 5)
             vqe_conv_tol: VQE convergence tolerance (default: 1e-6)
             
         Returns:
-            tuple: (final_energies, final_eigenvectors, lassi_energies)
+            tuple: (final_energies, final_eigenvectors, lassirq_energies)
         """
-        print("=== Starting LASSI-VQE Calculation ===")
+        print("=== Starting LASSIrq-VQE Calculation ===")
         
         # Step 1: Setup molecule and mean-field
         print("\n1. Setting up molecule and mean-field...")
@@ -345,15 +339,15 @@ class LASSI_VQE:
         
         # Step 2: Setup reference LASSCF
         print("\n2. Setting up reference LASSCF...")
-        self.setup_lasscf_reference(mo_guess)
+        self.setup_lasscf_reference(mo_guess, frag_atom_list)
         
         # Step 3: Setup CASCI reference
         print("\n3. Setting up CASCI reference...")
         self.setup_casci_reference()
         
-        # Step 4: Setup charge transfer states
-        print("\n4. Setting up charge transfer states...")
-        self.setup_charge_transfer_states()
+        # Step 4: Setup LASSIrq for charge transfer states
+        print(f"\n4. Setting up LASSIrq[{self.r},{self.q}] for charge transfer states...")
+        self.setup_lassirq()
         
         # Step 5: Compute effective Hamiltonian
         print("\n5. Computing effective Hamiltonian...")
@@ -371,13 +365,13 @@ class LASSI_VQE:
         print("\n8. Solving generalized eigenvalue problem...")
         self.solve_generalized_eigenvalue_problem()
         
-        # Step 9: Compare with standard LASSI
-        print("\n9. Comparing with standard LASSI...")
-        lassi_energies, _ = self.compare_with_lassi()
+        # Step 9: Get LASSIrq results for comparison
+        print(f"\n9. Getting LASSIrq[{self.r},{self.q}] results for comparison...")
+        lassirq_energies, _ = self.get_lassirq_results()
         
-        print("\n=== LASSI-VQE Calculation Complete ===")
+        print("\n=== LASSIrq-VQE Calculation Complete ===")
         
-        return self.final_energies, self.final_eigenvectors, lassi_energies
+        return self.final_energies, self.final_eigenvectors, lassirq_energies
     
     def save_molden_files(self, base_name=None):
         """Save molecular orbital files"""
