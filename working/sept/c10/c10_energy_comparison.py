@@ -16,7 +16,7 @@ from pyscf import gto, scf, mcscf
 from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
 
 # Add current directory to path
-sys.path.append('/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept')
+sys.path.append(os.getcwd())
 from las_vqe_nosi import LASVQENOSI
 
 @dataclass
@@ -460,7 +460,7 @@ The energy ordering follows expected quantum chemistry hierarchy:
 """
         
         # Write to file
-        filepath = f"/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/{filename}"
+        filepath = f"{filename}"
         with open(filepath, 'w') as f:
             f.write(markdown_content)
         
@@ -470,6 +470,7 @@ The energy ordering follows expected quantum chemistry hierarchy:
 def main():
     """Main execution function"""
     # Test parameters - can be modified for different studies
+    
     test_parameters = [
         (0.0001, 10),   # Very tight threshold, few cycles
         (0.0001, 100),  # Tight threshold, moderate cycles  
@@ -477,6 +478,9 @@ def main():
         (0.001, 10),    # Moderate threshold, few cycles
         (0.001, 100),   # Moderate threshold, moderate cycles
         (0.001, 1000),  # Moderate threshold, many cycles
+    ]
+    test_parameters = [
+            (0.1, 2),
     ]
     
     print("C10 Energy Comparison Study")

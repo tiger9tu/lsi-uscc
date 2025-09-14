@@ -1,7 +1,7 @@
 C10 Energy Comparison Study
 ==================================================
 
-==================== Testing threshold=0.0001, max_cycle=10 ====================
+==================== Testing threshold=0.1, max_cycle=2 ====================
 C10 molecule setup:
   Atoms: 22
   Electrons: 72
@@ -9,7 +9,7 @@ C10 molecule setup:
   Basis set: 6-31g
 ======================================================================
 C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.0001, Max Cycles: 10
+Threshold: 0.1, Max Cycles: 2
 Basis: 6-31g
 ======================================================================
 
@@ -18,137 +18,14 @@ Running CASCI calculation...
 Running LASSCF calculation...
 LASSCF calculation failed: all input arrays must have the same shape
 
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.0001, cycles=10)...
+Running LAS-VQE-NOSI Protocol 1 (threshold=0.1, cycles=2)...
 LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
 
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.0001, cycles=10)...
+Running LAS-VQE-NOSI Protocol 2 (threshold=0.1, cycles=2)...
 LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.0001, max_cycle=10: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c10_631g.md'
---------------------------------------------------
 
-==================== Testing threshold=0.0001, max_cycle=100 ====================
-C10 molecule setup:
-  Atoms: 22
-  Electrons: 72
-  Basis functions: 114
-  Basis set: 6-31g
-======================================================================
-C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.0001, Max Cycles: 100
-Basis: 6-31g
-======================================================================
-
-Running CASCI calculation...
-
-Running LASSCF calculation...
-LASSCF calculation failed: all input arrays must have the same shape
-
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.0001, cycles=100)...
-LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
-
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.0001, cycles=100)...
-LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.0001, max_cycle=100: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c100_631g.md'
---------------------------------------------------
-
-==================== Testing threshold=0.0001, max_cycle=1000 ====================
-C10 molecule setup:
-  Atoms: 22
-  Electrons: 72
-  Basis functions: 114
-  Basis set: 6-31g
-======================================================================
-C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.0001, Max Cycles: 1000
-Basis: 6-31g
-======================================================================
-
-Running CASCI calculation...
-
-Running LASSCF calculation...
-LASSCF calculation failed: all input arrays must have the same shape
-
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.0001, cycles=1000)...
-LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
-
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.0001, cycles=1000)...
-LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.0001, max_cycle=1000: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c1000_631g.md'
---------------------------------------------------
-
-==================== Testing threshold=0.001, max_cycle=10 ====================
-C10 molecule setup:
-  Atoms: 22
-  Electrons: 72
-  Basis functions: 114
-  Basis set: 6-31g
-======================================================================
-C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.001, Max Cycles: 10
-Basis: 6-31g
-======================================================================
-
-Running CASCI calculation...
-
-Running LASSCF calculation...
-LASSCF calculation failed: all input arrays must have the same shape
-
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.001, cycles=10)...
-LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
-
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.001, cycles=10)...
-LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.001, max_cycle=10: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c10_631g.md'
---------------------------------------------------
-
-==================== Testing threshold=0.001, max_cycle=100 ====================
-C10 molecule setup:
-  Atoms: 22
-  Electrons: 72
-  Basis functions: 114
-  Basis set: 6-31g
-======================================================================
-C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.001, Max Cycles: 100
-Basis: 6-31g
-======================================================================
-
-Running CASCI calculation...
-
-Running LASSCF calculation...
-LASSCF calculation failed: all input arrays must have the same shape
-
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.001, cycles=100)...
-LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
-
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.001, cycles=100)...
-LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.001, max_cycle=100: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c100_631g.md'
---------------------------------------------------
-
-==================== Testing threshold=0.001, max_cycle=1000 ====================
-C10 molecule setup:
-  Atoms: 22
-  Electrons: 72
-  Basis functions: 114
-  Basis set: 6-31g
-======================================================================
-C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods
-Threshold: 0.001, Max Cycles: 1000
-Basis: 6-31g
-======================================================================
-
-Running CASCI calculation...
-
-Running LASSCF calculation...
-LASSCF calculation failed: all input arrays must have the same shape
-
-Running LAS-VQE-NOSI Protocol 1 (threshold=0.001, cycles=1000)...
-LAS-VQE-NOSI Protocol 1 failed: 'LASVQENOSI' object has no attribute 'run'
-
-Running LAS-VQE-NOSI Protocol 2 (threshold=0.001, cycles=1000)...
-LAS-VQE-NOSI Protocol 2 failed: 'LASVQENOSI' object has no attribute 'run'
-✗ Failed threshold=0.001, max_cycle=1000: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c1000_631g.md'
+Results written to: C10_ENERGY_COMPARISON_t0.1_c2_631g.md
+✓ Completed threshold=0.1, max_cycle=2
 --------------------------------------------------
 
 🎯 C10 energy comparison study completed!
