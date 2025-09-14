@@ -356,8 +356,8 @@ def main():
 
         h, s, _ = build_noci_matrices(noci_states, h1e, h2e, ovlp, nmo, nocc, mol.energy_nuc())
 
-        print("Hamiltonian matrix H:\n", h)
-        print("\nOverlap matrix S:\n", s)
+        # print("Hamiltonian matrix H:\n", h)
+        # print("\nOverlap matrix S:\n", s)
 
         # ----- generalised diagonalisation -----
         evals, evecs = scipy.linalg.eigh(h, b=s)
