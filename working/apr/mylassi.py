@@ -207,7 +207,8 @@ print("Eigenvalues\n", e)
 
 
 # using vqe to optimize each CT states
-nstates = len(lsi.ci[0])
+# nstates = len(lsi.ci[0])
+nstates = 5
 psis = []
 
 for i in range(nstates):
@@ -225,7 +226,7 @@ for i in range(nstates):
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol,a_idxs_selected,i_idxs_selected)
     mc_uscc.fcisolver.norb_f = las.ncas_sub
     fci = mc_uscc.fcisolver
-    lasci_ominus1.GLOBAL_MAX_CYCLE = 3
+    lasci_ominus1.GLOBAL_MAX_CYCLE = 10
     mc_uscc.kernel(ci0 = cilas2f(ci, las.ncas_sub, nelec_sub))
     psis.append(mc_uscc.fcisolver.psi)
 

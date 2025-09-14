@@ -111,7 +111,10 @@ if stil90xyz:
         'spinsub': [1, 1, 1],  # Spin multiplicity = 2S+1 = 1 (singlet)
         'frag_atom_list': [[1,2,3,4,5,6,15,16,17,18,19], [0,7,14,20], [8,9,10,11,12,13,21,22,23,24,25]],
     }
-    molecular_configs.append(stil_sto3g_90)
+    stil_631g_90 = copy.deepcopy(stil_sto3g_90)
+    stil_631g_90['name'] = 'STIL_631G_90'
+    stil_631g_90['basis'] = '6-31g'
+    molecular_configs.extend([stil_sto3g_90, stil_631g_90])
 
 if c4xyz:
     c4_sto3g = {
