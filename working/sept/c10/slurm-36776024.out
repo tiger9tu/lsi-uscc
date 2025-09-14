@@ -1,0 +1,48 @@
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 495, in main
+    calc = C10EnergyComparison(basis='6-31g', verbose=1)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 54, in __init__
+    self.setup_molecule()
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 62, in setup_molecule
+    natoms = int(lines[0].strip())
+ValueError: invalid literal for int() with base 10: 'C -5.544122 0.214299 0.000000'

@@ -1,0 +1,2 @@
+slurmstepd: error: TMPDIR [/scratch/local/jobs/35178990] is not writeable
+slurmstepd: error: Setting TMPDIR to /tmp

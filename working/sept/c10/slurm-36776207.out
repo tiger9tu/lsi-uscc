@@ -1,0 +1,36 @@
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c10_631g.md'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c100_631g.md'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.0001_c1000_631g.md'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c10_631g.md'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c100_631g.md'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 497, in main
+    calc.write_results_markdown(results, threshold, max_cycle, filename)
+  File "/home/tuy/repo/las-uscc-noci/working/sept/c10/c10_energy_comparison.py", line 464, in write_results_markdown
+    with open(filepath, 'w') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept/c10/C10_ENERGY_COMPARISON_t0.001_c1000_631g.md'

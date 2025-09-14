@@ -1,0 +1,14 @@
+slurmstepd: error: TMPDIR [/scratch/local/jobs/35178982] is not writeable
+slurmstepd: error: Setting TMPDIR to /tmp
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/excite_las_noci.py", line 331, in <module>
+    with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/tuy/repo/las_uccsd_data/stilbene/geometries/stil-90.xyz'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/excite_las_sep_opt_noci.py", line 308, in <module>
+    with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/tuy/repo/las_uccsd_data/stilbene/geometries/stil-90.xyz'
+Traceback (most recent call last):
+  File "/home/tuy/repo/las-uscc-noci/working/excite_las_opt0_noci.py", line 331, in <module>
+    with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
+FileNotFoundError: [Errno 2] No such file or directory: '/home/tuy/repo/las_uccsd_data/stilbene/geometries/stil-90.xyz'

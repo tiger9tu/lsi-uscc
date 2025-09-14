@@ -56,13 +56,8 @@ class C10EnergyComparison:
     def setup_molecule(self):
         """Setup PySCF molecule object"""
         with open(self.geom_file, 'r') as f:
-            lines = f.readlines()
+            atom_string = f.read()
         
-        # Parse xyz file
-        natoms = int(lines[0].strip())
-        atom_string = ""
-        for i in range(2, 2 + natoms):
-            atom_string += lines[i]
         
         self.mol = gto.M(
             atom=atom_string,
