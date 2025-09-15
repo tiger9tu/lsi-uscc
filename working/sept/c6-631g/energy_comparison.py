@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stilbene-001 Molecule Energy Comparison Study
+Molecule Energy Comparison Study (6-31G basis)
 
 Compares the following methods:
 1. LASVQENOSI Protocol 1: Fragment-pair specific excitation sets
@@ -8,11 +8,6 @@ Compares the following methods:
 3. LAS-VQE: VQE over all excitations (single state)
 4. CASCI: Complete active space CI reference
 5. LASSCF: From LASVQENOSI calculations (no additional computation)
-
-For Stilbene-001 molecule (trans-stilbene) with fragment spin orbital indices:
-- Fragment 0: Phenyl ring 1 (0,1,2,3,10,11,12,13)
-- Fragment 1: Vinyl bridge (4,5,14,15)
-- Fragment 2: Phenyl ring 2 (6,7,8,9,16,17,18,19)
 """
 
 import numpy as np
@@ -47,13 +42,13 @@ class ComparisonResult:
     additional_info: Dict[str, Any] = None
 
 
-class Stilbene001EnergyComparison:
-    """Stilbene-001 molecule energy comparison framework"""
-    
-    def __init__(self, basis: str = 'sto-3g', gradient_threshold: float = 0.01, 
+class EnergyComparison:
+    """molecule energy comparison framework (6-31G basis)"""
+
+    def __init__(self, geom: str, ncas_sub, nelec_sub, frag_atom_list, frag_spin_orbs, frag_pairs,basis: str = '6-31g', gradient_threshold: float = 0.01,
                  vqe_max_cycles: int = 10, verbose: int = 1):
         """
-        Initialize Stilbene-001 comparison study
+        Initialize comparison study
         
         Parameters:
         -----------
@@ -71,74 +66,21 @@ class Stilbene001EnergyComparison:
         self.vqe_max_cycles = vqe_max_cycles
         self.verbose = verbose
         
-        # Stilbene-001 molecule setup
-        self.stilbene001_geometry = self._load_stilbene001_geometry()
+        self.geom = geom
         self.mol = self._setup_molecule()
         
-        # Fragment definitions for Stilbene-001 (Phenyl-Vinyl-Phenyl)
-        self.ncas_sub = (4, 2, 4)
-        self.nelec_sub = ((2, 2), (1, 1), (2, 2))
-        self.frag_atom_list = ((1,2,3,4,5,6,15,16,17,18,19), (0,7,14,20), (8,9,10,11,12,13,21,22,23,24,25))
-        
-        # Fragment spin orbital indices (after LASSCF orbital ordering)
-        self.frag_spin_orbs = {
-            0: (0, 1, 2, 3, 10, 11, 12, 13),    # Fragment 0: Phenyl ring 1
-            1: (4, 5, 14, 15),                  # Fragment 1: Vinyl bridge
-            2: (6, 7, 8, 9, 16, 17, 18, 19)    # Fragment 2: Phenyl ring 2
-        }
-        
+        self.ncas_sub = ncas_sub  # e.g., (4, 4, 4)
+        self.nelec_sub = nelec_sub
+        self.frag_atom_list = frag_atom_list
+        self.frag_spin_orbs = frag_spin_orbs
+        self.frag_pairs = frag_pairs
+
         # Results storage
         self.results: List[ComparisonResult] = []
-        
-    def _load_stilbene001_geometry(self) -> str:
-        """Load Stilbene-001 geometry from data directory with machine-independent path handling"""
-        # Try multiple possible paths
-        possible_paths = [
-            '../../geom/stil-001.xyz',
-            '../geom/stil-001.xyz',
-            os.path.join(os.path.dirname(__file__), '../../geom/stil-001.xyz'),
-            '/home/jinx/repo/qchem/las_uccsd_data/stilbene/geometries/stil-001.xyz',
-            '/home/jinx/repo/qchem/las-uscc-noci-bot/working/geom/stil-001.xyz'
-        ]
-        
-        for path in possible_paths:
-            try:
-                with open(path, 'r') as f:
-                    return f.read()
-            except FileNotFoundError:
-                continue
-        
-        # Fallback Stilbene-001 geometry if file not found (trans-stilbene)
-        return """C    -5.847200    0.000000    0.000000
-C    -3.372600    0.000000    0.000000
-C    -2.681300   -1.217000    0.000000
-C    -2.681300    1.217000    0.000000
-C    -1.290600   -1.217000    0.000000
-C    -1.290600    1.217000    0.000000
-C    -0.599300    0.000000    0.000000
-C     0.599300    0.000000    0.000000
-C     1.290600   -1.217000    0.000000
-C     1.290600    1.217000    0.000000
-C     2.681300   -1.217000    0.000000
-C     2.681300    1.217000    0.000000
-C     3.372600    0.000000    0.000000
-C     5.847200    0.000000    0.000000
-H    -6.384100   -0.928600    0.000000
-H    -6.384100    0.928600    0.000000
-H    -3.223300   -2.154400    0.000000
-H    -3.223300    2.154400    0.000000
-H    -0.748900   -2.154400    0.000000
-H    -0.748900    2.154400    0.000000
-H     0.748900   -2.154400    0.000000
-H     0.748900    2.154400    0.000000
-H     3.223300   -2.154400    0.000000
-H     3.223300    2.154400    0.000000
-H     6.384100   -0.928600    0.000000
-H     6.384100    0.928600    0.000000"""
     
     def _setup_molecule(self) -> gto.Mole:
-        """Setup Stilbene-001 molecule"""
-        mol = gto.M(atom=self.stilbene001_geometry, basis=self.basis, verbose=0)
+        """Setup molecule"""
+        mol = gto.M(atom=self.geom, basis=self.basis, verbose=0)
         mol.build()
         return mol
     
@@ -199,9 +141,9 @@ H     6.384100    0.928600    0.000000"""
         Protocol 1: Fragment-pair specific excitation sets
         
         Divides excitations into 3 sets based on fragment pairs:
-        - Set 1: Excitations within fragment pair (0,1) - Phenyl-Vinyl
-        - Set 2: Excitations within fragment pair (1,2) - Vinyl-Phenyl
-        - Set 3: Excitations within fragment pair (0,2) - Phenyl-Phenyl
+        - Set 1: Excitations within fragment pair (0,1)
+        - Set 2: Excitations within fragment pair (1,2)  
+        - Set 3: Excitations within fragment pair (0,2)
         """
         if self.verbose >= 1:
             print("\n" + "="*60)
@@ -224,25 +166,27 @@ H     6.384100    0.928600    0.000000"""
         if self.verbose >= 1:
             print(f"Total excitations from gradient selection: {len(all_a_idxs)}")
         
-        # Create fragment-pair specific sets for Stilbene conjugation
-        # Set 1: Fragment pair (0,1) - Phenyl ring 1 to Vinyl bridge
-        set1_a, set1_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (0, 1))
-        
-        # Set 2: Fragment pair (1,2) - Vinyl bridge to Phenyl ring 2
-        set2_a, set2_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (1, 2))
-        
-        # Set 3: Fragment pair (0,2) - Phenyl ring 1 to Phenyl ring 2 (through conjugation)
-        set3_a, set3_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (0, 2))
+        # Create fragment-pair specific sets
+        # Set 1: Fragment pair (0,1) 
+
+        sets_a, sets_i = [], []
+        for frag_pair in self.frag_pairs:
+            a_set, i_set = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, frag_pair)
+            if len(a_set) > 0 and len(i_set) > 0:
+                sets_a.append(a_set)
+                sets_i.append(i_set)
+                if self.verbose >= 1:
+                    print(f"Fragment pair {frag_pair}: {len(a_set)} excitations")
+
         
         # Filter out empty sets and ensure minimum size
         protocol1_sets = []
-        for i, (a_set, i_set) in enumerate([(set1_a, set1_i), (set2_a, set2_i), (set3_a, set3_i)]):
+        for i, (a_set, i_set) in enumerate(zip(sets_a, sets_i)):
             if len(a_set) > 0 and len(i_set) > 0:
                 protocol1_sets.append((a_set, i_set))
                 if self.verbose >= 1:
-                    pair_names = ["Phenyl1-Vinyl", "Vinyl-Phenyl2", "Phenyl1-Phenyl2"]
-                    print(f"Fragment pair {[(0,1), (1,2), (0,2)][i]} ({pair_names[i]}): {len(a_set)} excitations")
-        
+                    print(f"Fragment pair {self.frag_pairs[i]}: {len(a_set)} excitations")
+
         if len(protocol1_sets) == 0:
             # Fallback: use first few excitations
             protocol1_sets = [(all_a_idxs[:5], all_i_idxs[:5])]
@@ -286,8 +230,7 @@ H     6.384100    0.928600    0.000000"""
             calculation_time=time.time() - start_time,
             converged=any(calc.result.vqe_converged) if calc.result.vqe_converged else False,
             additional_info={
-                'fragment_pairs': [(0,1), (1,2), (0,2)],
-                'fragment_names': ["Phenyl1-Vinyl", "Vinyl-Phenyl2", "Phenyl1-Phenyl2"],
+                'fragment_pairs': self.frag_pairs,
                 'set_sizes': [len(a_set) for a_set, i_set in protocol1_sets],
                 'individual_vqe_energies': calc.result.individual_vqe_energies.copy(),
                 'valid_states': len(valid_states)
@@ -331,13 +274,12 @@ H     6.384100    0.928600    0.000000"""
         
         # Divide into 3 sets of equal size
         n_total = len(combined_excitations)
-        set_size = n_total // 3
+        set_size = n_total // len(self.frag_pairs)
         
         protocol2_sets = []
-        for i in range(3):
+        for i in range(len(self.frag_pairs)):
             start_idx = i * set_size
-            end_idx = (i + 1) * set_size if i < 2 else n_total  # Last set gets remainder
-            
+            end_idx = (i + 1) * set_size if i < len(self.frag_pairs) - 1 else n_total  # Last set gets remainder
             set_excitations = combined_excitations[start_idx:end_idx]
             if len(set_excitations) > 0:
                 a_set, i_set = zip(*set_excitations)
@@ -522,7 +464,7 @@ H     6.384100    0.928600    0.000000"""
         """Run all comparison methods"""
         if self.verbose >= 1:
             print(f"\n{'='*80}")
-            print("STILBENE-001 MOLECULE ENERGY COMPARISON STUDY")
+            print("MOLECULE ENERGY COMPARISON STUDY (6-31G BASIS)")
             print(f"Basis: {self.basis}, Gradient threshold: {self.gradient_threshold}")
             print(f"{'='*80}")
         
@@ -542,7 +484,7 @@ H     6.384100    0.928600    0.000000"""
             return
             
         print(f"\n{'='*100}")
-        print("STILBENE-001 ENERGY COMPARISON SUMMARY")
+        print("ENERGY COMPARISON SUMMARY (6-31G BASIS)")
         print(f"{'='*100}")
         
         # Main results table
@@ -600,9 +542,8 @@ H     6.384100    0.928600    0.000000"""
         print(f"\nMETHOD EXPECTATIONS:")
         print("• CASCI should provide the lowest energy (exact within active space)")
         print("• LAS-VQE-NOSI methods should improve upon LASSCF")
-        print("• Protocol 1 (fragment-based) captures Phenyl-Vinyl-Phenyl conjugation")
+        print("• Protocol 1 (fragment-based) may capture different physics than Protocol 2 (random)")
         print("• Single LAS-VQE should be between LASSCF and CASCI")
-        print("• Trans-stilbene provides stable conjugated π-system")
     
     def _print_matrix(self, matrix: np.ndarray, indent: str = ""):
         """Print a matrix in readable format"""
@@ -616,8 +557,8 @@ def main():
     """Main execution function"""
     
     # Setup comparison study
-    comparison = Stilbene001EnergyComparison(
-        basis='sto-3g',
+    comparison = EnergyComparison(
+        basis='6-31g',
         gradient_threshold=0.0001,
         vqe_max_cycles=30,
         verbose=1
@@ -633,6 +574,6 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Starting Stilbene-001 molecule energy comparison study...")
+    print("Starting molecule energy comparison study (6-31G basis)...")
     results = main()
     print(f"\nComparison study completed with {len(results)} methods!")

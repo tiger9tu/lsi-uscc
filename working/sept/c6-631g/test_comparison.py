@@ -7,14 +7,42 @@ Tests 4 combinations: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10),
 
 import sys
 import os
-sys.path.append('/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept')
 
-from c6_energy_comparison import C6EnergyComparison
+
+from energy_comparison import EnergyComparison
 import time
+
+name = 'C6 (6-31G) - 4-Parameter Combination Test'
+ncas_sub = (2, 2, 2)
+nelec_sub = ((1, 1), (1, 1), (1, 1))
+frag_atom_list = ((0, 2), (10, 11), (3, 1))  # C6 fragment atoms
+
+# Fragment spin orbital indices (after LASSCF orbital ordering)
+frag_spin_orbs = {
+    0: (0, 1, 6, 7),    # Fragment 0 spin orbitals
+    1: (2, 3, 8, 9),    # Fragment 1 spin orbitals  
+    2: (4, 5, 10, 11)   # Fragment 2 spin orbitals
+}
+
+frag_pairs = ((0, 1), (1, 2), (0, 2))  # Fragment pairs for NOCI
+
+geom = """C -3.075055 0.167498 0.000000
+C 3.075055 -0.167498 0.000000
+C -1.867388 -0.418911 0.000000
+C 1.867388 0.418911 0.000000
+H -3.180907 1.249260 0.000000
+H 3.180907 -1.249260 0.000000
+H -3.991128 -0.413469 0.000000
+H 3.991128 0.413469 0.000000
+H -1.805249 -1.507080 0.000000
+H 1.805249 1.507080 0.000000
+C -0.606997 0.297372 0.000000
+C 0.606997 -0.297372 0.000000
+H -0.661631 1.386399 0.000000
+H 0.661631 -1.386399 0.000000"""
 
 def main():
     print('='*80)
-    print('C6 (6-31G) - 4-PARAMETER COMBINATION COMPARISON')
     print('Testing: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10)')
     print('         (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)')
     print('='*80)
@@ -44,11 +72,17 @@ def main():
         start_time = time.time()
         
         try:
-            comparison = C6EnergyComparison(
+            comparison = EnergyComparison(
+                                geom=geom,
+                ncas_sub=ncas_sub,
+                nelec_sub=nelec_sub,
+                frag_atom_list=frag_atom_list,
+                frag_spin_orbs=frag_spin_orbs,
+                frag_pairs=frag_pairs,
                 basis='6-31g',
                 gradient_threshold=thres,
                 vqe_max_cycles=maxcycle,
-                verbose=1
+                                verbose=1,
             )
             
             results = comparison.run_all_methods()
@@ -85,7 +119,7 @@ def main():
     
     # Print summary of all test cases
     print('\n' + '='*100)
-    print('SUMMARY OF ALL 4 TEST CASES - C6 (6-31G)')
+    print('SUMMARY OF ALL 4 TEST CASES - ', name)
     print('='*100)
     
     print(f"{'Case':<6} {'Thres':<8} {'MaxCyc':<8} {'Time(s)':<8} {'Status':<10} {'Methods Completed':<20}")
@@ -112,7 +146,7 @@ def main():
         case_num += 1
     
     print('\n' + '='*80)
-    print('C6 (6-31G) 4-PARAMETER COMPARISON COMPLETE')
+    print(name, '4-PARAMETER COMPARISON COMPLETE')
     print('='*80)
     
     return all_results
