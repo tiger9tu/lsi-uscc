@@ -1,30 +1,73 @@
 #!/usr/bin/env python3
 """
-stilbene-180 - 4-Parameter Combination Test
+C6 (6-31G) - 4-Parameter Combination Test
 Tests 4 combinations: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10), 
                      (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)
 """
 
 import sys
 import os
-sys.path.append('/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept')
 
-exec(open('./stilbene-180_energy_comparison.py').read())
+
+from energy_comparison import EnergyComparison
 import time
+
+
+name = 'Stilbene-001'
+
+ncas_sub = (4, 2, 4)
+nelec_sub = ((2, 2), (1, 1), (2, 2))
+frag_atom_list = ((1,2,3,4,5,6,15,16,17,18,19), (0,7,14,20), (8,9,10,11,12,13,21,22,23,24,25))
+        
+        # Fragment spin orbital indices (after LASSCF orbital ordering)
+frag_spin_orbs = {
+            0: (0, 1, 2, 3, 10, 11, 12, 13),    # Fragment 0: Phenyl ring 1
+            1: (4, 5, 14, 15),                  # Fragment 1: Vinyl bridge
+            2: (6, 7, 8, 9, 16, 17, 18, 19)    # Fragment 2: Phenyl ring 2
+        }
+frag_pairs = ((0, 1), (1, 2),(0,2))  # Fragment pairs for NOCI
+
+
+geom = """C       0.49510780     -0.45268682     -0.00006800
+C       1.92255623     -0.18914892     -0.00006000
+C       2.46957402      1.10064756     -0.00007300
+C       3.83726147      1.29254348     -0.00006000
+C       4.70216213      0.20499392     -0.00004000
+C       4.18093133     -1.07917457     -0.00003800
+C       2.81041788     -1.27088549     -0.00005500
+C      -0.49510880      0.45268482      0.00043400
+C      -1.92255723      0.18914892      0.00022900
+C      -2.46957502     -1.10064756      0.00016900
+C      -3.83726147     -1.29254348     -0.00006600
+C      -4.70216113     -0.20499292     -0.00023000
+C      -4.18093133      1.07917457     -0.00015300
+C      -2.81041788      1.27088649      0.00008500
+H       0.23519591     -1.50769340      0.00012100
+H       1.81440028      1.96266822     -0.00010300
+H       4.23644231      2.29925908     -0.00006600
+H       5.77332670      0.36067086     -0.00002200
+H       4.84437107     -1.93491023     -0.00003000
+H       2.40613504     -2.27687709     -0.00006300
+H      -0.23519491      1.50769040      0.00006500
+H      -1.81439828     -1.96266722      0.00031000
+H      -4.23644331     -2.29925808     -0.00010600
+H      -5.77332570     -0.36066886     -0.00041100
+H      -4.84437107      1.93491023     -0.00028300
+H      -2.40613504      2.27687709      0.00014000
+"""
 
 def main():
     print('='*80)
-    print('STILBENE-180 - 4-PARAMETER COMBINATION COMPARISON')
     print('Testing: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10)')
     print('         (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)')
     print('='*80)
 
     # Define test parameter combinations
     test_params = [
-        {'thres': 0.01, 'maxcycle': 10},
-        {'thres': 0.001, 'maxcycle': 10},
-        {'thres': 0.01, 'maxcycle': 50},
-        {'thres': 0.001, 'maxcycle': 50}
+        {'thres': 0.1, 'maxcycle': 1},
+        # {'thres': 0.001, 'maxcycle': 10},
+        # {'thres': 0.01, 'maxcycle': 50},
+        # {'thres': 0.001, 'maxcycle': 50}
     ]
     
     # Results storage
@@ -44,11 +87,17 @@ def main():
         start_time = time.time()
         
         try:
-            comparison = Stilbene180EnergyComparison(
-                basis='sto-3g',
+            comparison = EnergyComparison(
+                                geom=geom,
+                ncas_sub=ncas_sub,
+                nelec_sub=nelec_sub,
+                frag_atom_list=frag_atom_list,
+                frag_spin_orbs=frag_spin_orbs,
+                frag_pairs=frag_pairs,
+                basis='6-31g',
                 gradient_threshold=thres,
                 vqe_max_cycles=maxcycle,
-                verbose=1
+                                verbose=1,
             )
             
             results = comparison.run_all_methods()
@@ -85,7 +134,7 @@ def main():
     
     # Print summary of all test cases
     print('\n' + '='*100)
-    print('SUMMARY OF ALL 4 TEST CASES - STILBENE-180')
+    print('SUMMARY OF ALL 4 TEST CASES - ', name)
     print('='*100)
     
     print(f"{'Case':<6} {'Thres':<8} {'MaxCyc':<8} {'Time(s)':<8} {'Status':<10} {'Methods Completed':<20}")
@@ -112,7 +161,7 @@ def main():
         case_num += 1
     
     print('\n' + '='*80)
-    print('STILBENE-180 4-PARAMETER COMPARISON COMPLETE')
+    print(name, '4-PARAMETER COMPARISON COMPLETE')
     print('='*80)
     
     return all_results

@@ -1,20 +1,64 @@
 #!/usr/bin/env python3
 """
-C10 - 4-Parameter Combination Test
+C6 (6-31G) - 4-Parameter Combination Test
 Tests 4 combinations: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10), 
                      (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)
 """
 
 import sys
 import os
-sys.path.append('/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept')
 
-from c10_energy_comparison import C10EnergyComparison
+
+from energy_comparison import EnergyComparison
 import time
+
+
+name = 'C10'
+
+
+ncas_sub = (2, 2, 2, 2, 2)
+nelec_sub = ((1, 1), (1, 1), (1, 1), (1, 1), (1, 1))
+frag_atom_list = ((0, 2), (4, 6), (8, 10), (12, 14), (16, 18))  # C8 fragment atoms
+
+# Fragment spin orbital indices (after LASSCF orbital ordering)
+frag_spin_orbs = {
+            0: (0, 1, 10, 11),    # Fragment 0 spin orbitals
+            1: (2, 3, 12, 13),    # Fragment 1 spin orbitals  
+            2: (4, 5, 14, 15),    # Fragment 2 spin orbitals
+            3: (6, 7, 16, 17),    # Fragment 3 spin orbitals
+            4: (8, 9, 18, 19)     # Fragment 4 spin orbitals
+        }
+        
+        
+
+frag_pairs = ((0, 1), (1, 2), (2, 3), (3, 4))  # Fragment pairs for NOCI
+
+geom = """C -5.544122 0.214299 0.000000
+C 5.544122 -0.214299 0.000000
+C -4.350171 -0.402736 0.000000
+C 4.350171 0.402736 0.000000
+H -5.622764 1.298325 0.000000
+H 5.622764 -1.298325 0.000000
+H -6.474236 -0.343751 0.000000
+H 6.474236 0.343751 0.000000
+H -4.316850 -1.492261 0.000000
+H 4.316850 1.492261 0.000000
+C -3.074155 0.278469 0.000000
+C 3.074155 -0.278469 0.000000
+C -1.872943 -0.352359 0.000000
+C 1.872943 0.352359 0.000000
+H -3.097453 1.368452 0.000000
+H 3.097453 -1.368452 0.000000
+H -1.855664 -1.442745 0.000000
+H 1.855664 1.442745 0.000000
+C -0.600949 0.317418 0.000000
+C 0.600949 -0.317418 0.000000
+H -0.616498 1.407635 0.000000
+H 0.616498 -1.407635 0.000000
+"""
 
 def main():
     print('='*80)
-    print('C10 - 4-PARAMETER COMBINATION COMPARISON')
     print('Testing: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10)')
     print('         (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)')
     print('='*80)
@@ -44,11 +88,17 @@ def main():
         start_time = time.time()
         
         try:
-            comparison = C10EnergyComparison(
-                basis='sto-3g',
+            comparison = EnergyComparison(
+                                geom=geom,
+                ncas_sub=ncas_sub,
+                nelec_sub=nelec_sub,
+                frag_atom_list=frag_atom_list,
+                frag_spin_orbs=frag_spin_orbs,
+                frag_pairs=frag_pairs,
+                basis='6-31g',
                 gradient_threshold=thres,
                 vqe_max_cycles=maxcycle,
-                verbose=1
+                                verbose=1,
             )
             
             results = comparison.run_all_methods()
@@ -85,7 +135,7 @@ def main():
     
     # Print summary of all test cases
     print('\n' + '='*100)
-    print('SUMMARY OF ALL 4 TEST CASES - C10')
+    print('SUMMARY OF ALL 4 TEST CASES - ', name)
     print('='*100)
     
     print(f"{'Case':<6} {'Thres':<8} {'MaxCyc':<8} {'Time(s)':<8} {'Status':<10} {'Methods Completed':<20}")
@@ -112,7 +162,7 @@ def main():
         case_num += 1
     
     print('\n' + '='*80)
-    print('C10 4-PARAMETER COMPARISON COMPLETE')
+    print(name, '4-PARAMETER COMPARISON COMPLETE')
     print('='*80)
     
     return all_results

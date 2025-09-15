@@ -1,20 +1,63 @@
 #!/usr/bin/env python3
 """
-Stilbene-60 - 4-Parameter Combination Test
+C6 (6-31G) - 4-Parameter Combination Test
 Tests 4 combinations: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10), 
                      (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)
 """
 
 import sys
 import os
-sys.path.append('/home/jinx/repo/qchem/las-uscc-noci-bot/working/sept')
 
-exec(open('./stilbene-60_energy_comparison.py').read())
+
+from energy_comparison import EnergyComparison
 import time
+
+
+name = 'Stilbene-001'
+
+ncas_sub = (4, 2, 4)
+nelec_sub = ((2, 2), (1, 1), (2, 2))
+frag_atom_list = ((1,2,3,4,5,6,15,16,17,18,19), (0,7,14,20), (8,9,10,11,12,13,21,22,23,24,25))
+        
+        # Fragment spin orbital indices (after LASSCF orbital ordering)
+frag_spin_orbs = {
+            0: (0, 1, 2, 3, 10, 11, 12, 13),    # Fragment 0: Phenyl ring 1
+            1: (4, 5, 14, 15),                  # Fragment 1: Vinyl bridge
+            2: (6, 7, 8, 9, 16, 17, 18, 19)    # Fragment 2: Phenyl ring 2
+        }
+frag_pairs = ((0, 1), (1, 2),(0,2))  # Fragment pairs for NOCI
+
+
+geom = """C 0.637297 1.609894 0.271644
+C 1.671915 0.637125 0.095037
+C 1.555787 -0.429383 -0.818561
+C 2.601892 -1.301075 -1.027366
+C 3.804515 -1.141541 -0.343657
+C 3.944438 -0.092275 0.554759
+C 2.896357 0.779603 0.774827
+C -0.637289 1.610117 -0.271666
+C -1.671947 0.637404 -0.094976
+C -1.556248 -0.428352 0.819552
+C -2.602303 -1.300124 1.028279
+C -3.804491 -1.141341 0.343632
+C -3.944028 -0.092767 -0.555655
+C -2.895976 0.77916 -0.775661
+H 0.902253 2.448365 0.916227
+H 0.632452 -0.54494 -1.373252
+H 2.490883 -2.108975 -1.73971
+H 4.627795 -1.820335 -0.523243
+H 4.877985 0.045 1.08573
+H 3.011386 1.601166 1.472498
+H -0.901646 2.447808 -0.917488
+H -0.633279 -0.543245 1.374995
+H -2.491625 -2.107457 1.741317
+H -4.627761 -1.820157 0.52318
+H -4.877252 0.043926 -1.087344
+H -3.010699 1.600174 -1.474031
+"""
 
 def main():
     print('='*80)
-    print('STILBENE-60 - 4-PARAMETER COMBINATION COMPARISON')
     print('Testing: (thres=0.01, maxcycle=10), (thres=0.001, maxcycle=10)')
     print('         (thres=0.01, maxcycle=50), (thres=0.001, maxcycle=50)')
     print('='*80)
@@ -44,11 +87,17 @@ def main():
         start_time = time.time()
         
         try:
-            comparison = Stilbene60EnergyComparison(
-                basis='sto-3g',
+            comparison = EnergyComparison(
+                                geom=geom,
+                ncas_sub=ncas_sub,
+                nelec_sub=nelec_sub,
+                frag_atom_list=frag_atom_list,
+                frag_spin_orbs=frag_spin_orbs,
+                frag_pairs=frag_pairs,
+                basis='6-31g',
                 gradient_threshold=thres,
                 vqe_max_cycles=maxcycle,
-                verbose=1
+                                verbose=1,
             )
             
             results = comparison.run_all_methods()
@@ -85,7 +134,7 @@ def main():
     
     # Print summary of all test cases
     print('\n' + '='*100)
-    print('SUMMARY OF ALL 4 TEST CASES - STILBENE-60')
+    print('SUMMARY OF ALL 4 TEST CASES - ', name)
     print('='*100)
     
     print(f"{'Case':<6} {'Thres':<8} {'MaxCyc':<8} {'Time(s)':<8} {'Status':<10} {'Methods Completed':<20}")
@@ -112,7 +161,7 @@ def main():
         case_num += 1
     
     print('\n' + '='*80)
-    print('STILBENE-60 4-PARAMETER COMPARISON COMPLETE')
+    print(name, '4-PARAMETER COMPARISON COMPLETE')
     print('='*80)
     
     return all_results

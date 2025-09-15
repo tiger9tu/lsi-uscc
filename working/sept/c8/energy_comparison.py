@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-C10 Molecule Energy Comparison Study
+Molecule Energy Comparison Study (6-31G basis)
 
 Compares the following methods:
 1. LASVQENOSI Protocol 1: Fragment-pair specific excitation sets
@@ -8,13 +8,6 @@ Compares the following methods:
 3. LAS-VQE: VQE over all excitations (single state)
 4. CASCI: Complete active space CI reference
 5. LASSCF: From LASVQENOSI calculations (no additional computation)
-
-For C10 molecule with fragment spin orbital indices:
-- Fragment 0: (0,1,10,11)
-- Fragment 1: (2,3,12,13)
-- Fragment 2: (4,5,14,15)
-- Fragment 3: (6,7,16,17)
-- Fragment 4: (8,9,18,19)
 """
 
 import numpy as np
@@ -49,13 +42,13 @@ class ComparisonResult:
     additional_info: Dict[str, Any] = None
 
 
-class C10EnergyComparison:
-    """C10 molecule energy comparison framework"""
-    
-    def __init__(self, basis: str = 'sto-3g', gradient_threshold: float = 0.01, 
+class EnergyComparison:
+    """molecule energy comparison framework (6-31G basis)"""
+
+    def __init__(self, geom: str, ncas_sub, nelec_sub, frag_atom_list, frag_spin_orbs, frag_pairs,basis: str = '6-31g', gradient_threshold: float = 0.01,
                  vqe_max_cycles: int = 10, verbose: int = 1):
         """
-        Initialize C10 comparison study
+        Initialize comparison study
         
         Parameters:
         -----------
@@ -73,72 +66,21 @@ class C10EnergyComparison:
         self.vqe_max_cycles = vqe_max_cycles
         self.verbose = verbose
         
-        # C10 molecule setup
-        self.c10_geometry = self._load_c10_geometry()
+        self.geom = geom
         self.mol = self._setup_molecule()
         
-        # Fragment definitions for C10 (5 fragments of 2 electrons each)
-        self.ncas_sub = (2, 2, 2, 2, 2)
-        self.nelec_sub = ((1, 1), (1, 1), (1, 1), (1, 1), (1, 1))
-        self.frag_atom_list = ((0, 2), (4, 6), (8, 10), (12, 14), (16, 18))  # C10 fragment atoms
-        
-        # Fragment spin orbital indices (after LASSCF orbital ordering)
-        self.frag_spin_orbs = {
-            0: (0, 1, 10, 11),    # Fragment 0 spin orbitals
-            1: (2, 3, 12, 13),    # Fragment 1 spin orbitals  
-            2: (4, 5, 14, 15),    # Fragment 2 spin orbitals
-            3: (6, 7, 16, 17),    # Fragment 3 spin orbitals
-            4: (8, 9, 18, 19)     # Fragment 4 spin orbitals
-        }
-        
+        self.ncas_sub = ncas_sub  # e.g., (4, 4, 4)
+        self.nelec_sub = nelec_sub
+        self.frag_atom_list = frag_atom_list
+        self.frag_spin_orbs = frag_spin_orbs
+        self.frag_pairs = frag_pairs
+
         # Results storage
         self.results: List[ComparisonResult] = []
-        
-    def _load_c10_geometry(self) -> str:
-        """Load C10 geometry from data directory with machine-independent path handling"""
-        # Try multiple possible paths
-        possible_paths = [
-            '../../geom/c10.xyz',
-            '../geom/c10.xyz',
-            os.path.join(os.path.dirname(__file__), '../../geom/c10.xyz'),
-            '/home/jinx/repo/qchem/las_uccsd_data/polyenes/geometries/c10.xyz',
-            '/home/jinx/repo/qchem/las-uscc-noci-bot/working/geom/c10.xyz'
-        ]
-        
-        for path in possible_paths:
-            try:
-                with open(path, 'r') as f:
-                    return f.read()
-            except FileNotFoundError:
-                continue
-        
-        # Fallback C10 geometry if file not found
-        return """C -4.888688 0.328074 0.000000
-C 4.888688 -0.328074 0.000000
-C -3.680765 -0.258336 0.000000
-C 3.680765 0.258336 0.000000
-C -2.418977 0.456226 0.000000
-C 2.418977 -0.456226 0.000000
-C -1.211056 -0.129885 0.000000
-C 1.211056 0.129885 0.000000
-C 0.000000 0.584916 0.000000
-C -0.000000 -0.814693 0.000000
-H -4.994538 1.409836 0.000000
-H 4.994538 -1.409836 0.000000
-H -5.804761 -0.252893 0.000000
-H 5.804761 0.252893 0.000000
-H -3.630916 -1.344509 0.000000
-H 3.630916 1.344509 0.000000
-H -2.468826 1.542399 0.000000
-H 2.468826 -1.542399 0.000000
-H -1.161207 -1.216058 0.000000
-H 1.161207 1.216058 0.000000
-H 0.049849 1.671089 0.000000
-H -0.049849 -1.900866 0.000000"""
     
     def _setup_molecule(self) -> gto.Mole:
-        """Setup C10 molecule"""
-        mol = gto.M(atom=self.c10_geometry, basis=self.basis, verbose=0)
+        """Setup molecule"""
+        mol = gto.M(atom=self.geom, basis=self.basis, verbose=0)
         mol.build()
         return mol
     
@@ -198,11 +140,10 @@ H -0.049849 -1.900866 0.000000"""
         """
         Protocol 1: Fragment-pair specific excitation sets
         
-        Divides excitations into sets based on fragment pairs:
+        Divides excitations into 3 sets based on fragment pairs:
         - Set 1: Excitations within fragment pair (0,1)
         - Set 2: Excitations within fragment pair (1,2)  
-        - Set 3: Excitations within fragment pair (2,3)
-        - Set 4: Excitations within fragment pair (3,4)
+        - Set 3: Excitations within fragment pair (0,2)
         """
         if self.verbose >= 1:
             print("\n" + "="*60)
@@ -227,26 +168,25 @@ H -0.049849 -1.900866 0.000000"""
         
         # Create fragment-pair specific sets
         # Set 1: Fragment pair (0,1) 
-        set1_a, set1_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (0, 1))
-        
-        # Set 2: Fragment pair (1,2)
-        set2_a, set2_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (1, 2))
-        
-        # Set 3: Fragment pair (2,3) 
-        set3_a, set3_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (2, 3))
-        
-        # Set 4: Fragment pair (3,4)
-        set4_a, set4_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (3, 4))
+
+        sets_a, sets_i = [], []
+        for frag_pair in self.frag_pairs:
+            a_set, i_set = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, frag_pair)
+            if len(a_set) > 0 and len(i_set) > 0:
+                sets_a.append(a_set)
+                sets_i.append(i_set)
+                if self.verbose >= 1:
+                    print(f"Fragment pair {frag_pair}: {len(a_set)} excitations")
+
         
         # Filter out empty sets and ensure minimum size
         protocol1_sets = []
-        fragment_pairs = [(0,1), (1,2), (2,3), (3,4)]
-        for i, (a_set, i_set) in enumerate([(set1_a, set1_i), (set2_a, set2_i), (set3_a, set3_i), (set4_a, set4_i)]):
+        for i, (a_set, i_set) in enumerate(zip(sets_a, sets_i)):
             if len(a_set) > 0 and len(i_set) > 0:
                 protocol1_sets.append((a_set, i_set))
                 if self.verbose >= 1:
-                    print(f"Fragment pair {fragment_pairs[i]}: {len(a_set)} excitations")
-        
+                    print(f"Fragment pair {self.frag_pairs[i]}: {len(a_set)} excitations")
+
         if len(protocol1_sets) == 0:
             # Fallback: use first few excitations
             protocol1_sets = [(all_a_idxs[:5], all_i_idxs[:5])]
@@ -290,7 +230,7 @@ H -0.049849 -1.900866 0.000000"""
             calculation_time=time.time() - start_time,
             converged=any(calc.result.vqe_converged) if calc.result.vqe_converged else False,
             additional_info={
-                'fragment_pairs': fragment_pairs[:len(protocol1_sets)],
+                'fragment_pairs': self.frag_pairs,
                 'set_sizes': [len(a_set) for a_set, i_set in protocol1_sets],
                 'individual_vqe_energies': calc.result.individual_vqe_energies.copy(),
                 'valid_states': len(valid_states)
@@ -304,7 +244,7 @@ H -0.049849 -1.900866 0.000000"""
         """
         Protocol 2: Random division of excitation sets
         
-        Randomly divides all selected excitations into multiple sets of equal size
+        Randomly divides all selected excitations into 3 sets of equal size
         """
         if self.verbose >= 1:
             print("\n" + "="*60)
@@ -332,16 +272,14 @@ H -0.049849 -1.900866 0.000000"""
         combined_excitations = list(zip(all_a_idxs, all_i_idxs))
         random.shuffle(combined_excitations)
         
-        # Divide into 4 sets of equal size (matching C10's 5 fragments -> 4 adjacent pairs)
+        # Divide into 3 sets of equal size
         n_total = len(combined_excitations)
-        n_sets = 4
-        set_size = n_total // n_sets
+        set_size = n_total // len(self.frag_pairs)
         
         protocol2_sets = []
-        for i in range(n_sets):
+        for i in range(len(self.frag_pairs)):
             start_idx = i * set_size
-            end_idx = (i + 1) * set_size if i < n_sets - 1 else n_total  # Last set gets remainder
-            
+            end_idx = (i + 1) * set_size if i < len(self.frag_pairs) - 1 else n_total  # Last set gets remainder
             set_excitations = combined_excitations[start_idx:end_idx]
             if len(set_excitations) > 0:
                 a_set, i_set = zip(*set_excitations)
@@ -526,7 +464,7 @@ H -0.049849 -1.900866 0.000000"""
         """Run all comparison methods"""
         if self.verbose >= 1:
             print(f"\n{'='*80}")
-            print("C10 MOLECULE ENERGY COMPARISON STUDY")
+            print("MOLECULE ENERGY COMPARISON STUDY (6-31G BASIS)")
             print(f"Basis: {self.basis}, Gradient threshold: {self.gradient_threshold}")
             print(f"{'='*80}")
         
@@ -546,7 +484,7 @@ H -0.049849 -1.900866 0.000000"""
             return
             
         print(f"\n{'='*100}")
-        print("C10 ENERGY COMPARISON SUMMARY")
+        print("ENERGY COMPARISON SUMMARY (6-31G BASIS)")
         print(f"{'='*100}")
         
         # Main results table
@@ -619,8 +557,8 @@ def main():
     """Main execution function"""
     
     # Setup comparison study
-    comparison = C10EnergyComparison(
-        basis='sto-3g',
+    comparison = EnergyComparison(
+        basis='6-31g',
         gradient_threshold=0.0001,
         vqe_max_cycles=30,
         verbose=1
@@ -636,6 +574,6 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Starting C10 molecule energy comparison study...")
+    print("Starting molecule energy comparison study (6-31G basis)...")
     results = main()
     print(f"\nComparison study completed with {len(results)} methods!")
