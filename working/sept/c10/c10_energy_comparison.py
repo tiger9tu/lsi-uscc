@@ -1,516 +1,641 @@
 #!/usr/bin/env python3
 """
-C10 Energy Comparison - LAS-VQE-NOSI Methods
-Based on c6_energy_comparison.py template
-Molecular system: C10 polyene chain
+C10 Molecule Energy Comparison Study
+
+Compares the following methods:
+1. LASVQENOSI Protocol 1: Fragment-pair specific excitation sets
+2. LASVQENOSI Protocol 2: Random division of excitation sets
+3. LAS-VQE: VQE over all excitations (single state)
+4. CASCI: Complete active space CI reference
+5. LASSCF: From LASVQENOSI calculations (no additional computation)
+
+For C10 molecule with fragment spin orbital indices:
+- Fragment 0: (0,1,10,11)
+- Fragment 1: (2,3,12,13)
+- Fragment 2: (4,5,14,15)
+- Fragment 3: (6,7,16,17)
+- Fragment 4: (8,9,18,19)
 """
 
-import os
-import sys
-import time
-from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-
+import random
+import time
+import os
+from typing import List, Tuple, Dict, Any
+from dataclasses import dataclass
 from pyscf import gto, scf, mcscf
-from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
+from scipy.linalg import eigh
 
-# Add current directory to path
-sys.path.append(os.getcwd())
+# Import our LAS-VQE-NOSI implementation
 from las_vqe_nosi import LASVQENOSI
+from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
+from mrh.my_pyscf.fci import csf_solver
+from mrh.exploratory.citools import grad
+from mrh.exploratory.unitary_cc import lasuccsd
+
 
 @dataclass
 class ComparisonResult:
-    """Results from energy comparison calculations"""
-    method: str
+    """Container for energy comparison results"""
+    method_name: str
     energy: float
-    time: float
-    converged: bool
+    n_excitations: int = 0
+    n_states: int = 0
+    H_matrix: np.ndarray = None
+    S_matrix: np.ndarray = None
+    min_diag_H: float = None
+    calculation_time: float = 0.0
+    converged: bool = False
     additional_info: Dict[str, Any] = None
 
+
 class C10EnergyComparison:
-    """Energy comparison calculations for C10 molecule"""
+    """C10 molecule energy comparison framework"""
     
-    def __init__(self, basis: str = '6-31g', verbose: int = 1):
+    def __init__(self, basis: str = 'sto-3g', gradient_threshold: float = 0.01, 
+                 vqe_max_cycles: int = 10, verbose: int = 1):
+        """
+        Initialize C10 comparison study
+        
+        Parameters:
+        -----------
+        basis : str
+            Basis set for calculations
+        gradient_threshold : float
+            Gradient threshold for excitation selection
+        vqe_max_cycles : int
+            Maximum VQE optimization cycles
+        verbose : int
+            Verbosity level
+        """
         self.basis = basis
+        self.gradient_threshold = gradient_threshold
+        self.vqe_max_cycles = vqe_max_cycles
         self.verbose = verbose
         
-        # C10 molecular configuration from mole_lasinfo.txt
-        self.geom_file = '../../geom/c10.xyz'
+        # C10 molecule setup
+        self.c10_geometry = self._load_c10_geometry()
+        self.mol = self._setup_molecule()
+        
+        # Fragment definitions for C10 (5 fragments of 2 electrons each)
         self.ncas_sub = (2, 2, 2, 2, 2)
         self.nelec_sub = ((1, 1), (1, 1), (1, 1), (1, 1), (1, 1))
-        self.spin_sub = (1, 1, 1, 1, 1)
-        self.frag_atom_list = [[0, 2], [10, 12], [18, 19], [13, 11], [3, 1]]
+        self.frag_atom_list = ((0, 2), (4, 6), (8, 10), (12, 14), (16, 18))  # C10 fragment atoms
         
-        # Fragment spin orbital indices for C10
+        # Fragment spin orbital indices (after LASSCF orbital ordering)
         self.frag_spin_orbs = {
-            0: (0, 1, 10, 11),
-            1: (2, 3, 12, 13),
-            2: (4, 5, 14, 15),
-            3: (6, 7, 16, 17),
-            4: (8, 9, 18, 19)
+            0: (0, 1, 10, 11),    # Fragment 0 spin orbitals
+            1: (2, 3, 12, 13),    # Fragment 1 spin orbitals  
+            2: (4, 5, 14, 15),    # Fragment 2 spin orbitals
+            3: (6, 7, 16, 17),    # Fragment 3 spin orbitals
+            4: (8, 9, 18, 19)     # Fragment 4 spin orbitals
         }
         
-        self.setup_molecule()
+        # Results storage
+        self.results: List[ComparisonResult] = []
+        
+    def _load_c10_geometry(self) -> str:
+        """Load C10 geometry from data directory with machine-independent path handling"""
+        # Try multiple possible paths
+        possible_paths = [
+            '../../geom/c10.xyz',
+            '../geom/c10.xyz',
+            os.path.join(os.path.dirname(__file__), '../../geom/c10.xyz'),
+            '/home/jinx/repo/qchem/las_uccsd_data/polyenes/geometries/c10.xyz',
+            '/home/jinx/repo/qchem/las-uscc-noci-bot/working/geom/c10.xyz'
+        ]
+        
+        for path in possible_paths:
+            try:
+                with open(path, 'r') as f:
+                    return f.read()
+            except FileNotFoundError:
+                continue
+        
+        # Fallback C10 geometry if file not found
+        return """C -4.888688 0.328074 0.000000
+C 4.888688 -0.328074 0.000000
+C -3.680765 -0.258336 0.000000
+C 3.680765 0.258336 0.000000
+C -2.418977 0.456226 0.000000
+C 2.418977 -0.456226 0.000000
+C -1.211056 -0.129885 0.000000
+C 1.211056 0.129885 0.000000
+C 0.000000 0.584916 0.000000
+C -0.000000 -0.814693 0.000000
+H -4.994538 1.409836 0.000000
+H 4.994538 -1.409836 0.000000
+H -5.804761 -0.252893 0.000000
+H 5.804761 0.252893 0.000000
+H -3.630916 -1.344509 0.000000
+H 3.630916 1.344509 0.000000
+H -2.468826 1.542399 0.000000
+H 2.468826 -1.542399 0.000000
+H -1.161207 -1.216058 0.000000
+H 1.161207 1.216058 0.000000
+H 0.049849 1.671089 0.000000
+H -0.049849 -1.900866 0.000000"""
     
-    def setup_molecule(self):
-        """Setup PySCF molecule object"""
-        with open(self.geom_file, 'r') as f:
-            atom_string = f.read()
-        
-        
-        self.mol = gto.M(
-            atom=atom_string,
+    def _setup_molecule(self) -> gto.Mole:
+        """Setup C10 molecule"""
+        mol = gto.M(atom=self.c10_geometry, basis=self.basis, verbose=0)
+        mol.build()
+        return mol
+    
+    def _setup_base_calculation(self) -> LASVQENOSI:
+        """Setup base LAS-VQE-NOSI calculation (common for all protocols)"""
+        calc = LASVQENOSI(
+            mol=self.mol,
+            ncas_sub=self.ncas_sub,
+            nelec_sub=self.nelec_sub,
             basis=self.basis,
+            frag_atom_list=self.frag_atom_list,
+            gradient_threshold=self.gradient_threshold,
+            vqe_max_cycles=self.vqe_max_cycles,
             verbose=self.verbose
         )
-        self.mol.build()
         
-        print(f"C10 molecule setup:")
-        print(f"  Atoms: {self.mol.natm}")
-        print(f"  Electrons: {self.mol.nelectron}")
-        print(f"  Basis functions: {self.mol.nao}")
-        print(f"  Basis set: {self.basis}")
+        # Setup basic calculations (shared by all methods)
+        calc.setup_molecule()
+        calc.perform_lasscf()
+        calc.setup_casci_reference()
+        
+        return calc
     
-    def run_casci(self) -> ComparisonResult:
-        """Run CASCI reference calculation"""
-        print("\nRunning CASCI calculation...")
+    def _get_fragment_pair_excitations(self, all_a_idxs: List, all_i_idxs: List, 
+                                     frag_pair: Tuple[int, int]) -> Tuple[List, List]:
+        """
+        Extract excitations within a specific fragment pair
+        
+        Parameters:
+        -----------
+        all_a_idxs, all_i_idxs : List
+            All available excitation indices
+        frag_pair : Tuple[int, int]
+            Fragment pair indices (e.g., (0,1) for fragments 0 and 1)
+            
+        Returns:
+        --------
+        Tuple[List, List]
+            Filtered excitation indices for the fragment pair
+        """
+        # Get combined spin orbitals for the fragment pair
+        frag_orbs = set(self.frag_spin_orbs[frag_pair[0]] + self.frag_spin_orbs[frag_pair[1]])
+
+        pair_a_idxs = []
+        pair_i_idxs = []
+        for idx in range(len(all_a_idxs)):
+            if (
+                all(elem in frag_orbs for elem in all_a_idxs[idx]) and
+                all(elem in frag_orbs for elem in all_i_idxs[idx])
+            ):
+                pair_a_idxs.append(all_a_idxs[idx])
+                pair_i_idxs.append(all_i_idxs[idx])
+        print("DEBUG: Fragment pair", frag_pair, "excitations found:", len(pair_a_idxs))
+        return pair_a_idxs, pair_i_idxs
+    
+    def run_protocol1(self) -> ComparisonResult:
+        """
+        Protocol 1: Fragment-pair specific excitation sets
+        
+        Divides excitations into sets based on fragment pairs:
+        - Set 1: Excitations within fragment pair (0,1)
+        - Set 2: Excitations within fragment pair (1,2)  
+        - Set 3: Excitations within fragment pair (2,3)
+        - Set 4: Excitations within fragment pair (3,4)
+        """
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("PROTOCOL 1: Fragment-Pair Specific Excitation Sets")
+            print("="*60)
+        
         start_time = time.time()
         
-        try:
-            # Mean-field calculation
-            mf = scf.RHF(self.mol)
-            mf.kernel()
-            
-            # CASCI calculation
-            # Total active space: 5 fragments × 2 orbitals = 10 orbitals
-            # Total active electrons: 5 fragments × 2 electrons = 10 electrons
-            mc = mcscf.CASCI(mf, 10, 10)
-            mc.kernel()
-            
-            calculation_time = time.time() - start_time
-            
-            return ComparisonResult(
-                method="CASCI",
-                energy=mc.e_tot,
-                time=calculation_time,
-                converged=mc.converged,
-                additional_info={"mo_energy": mc.mo_energy.copy()}
-            )
-            
-        except Exception as e:
-            print(f"CASCI calculation failed: {e}")
-            return ComparisonResult(
-                method="CASCI",
-                energy=float('inf'),
-                time=time.time() - start_time,
-                converged=False,
-                additional_info={"error": str(e)}
-            )
+        # Setup base calculation
+        calc = self._setup_base_calculation()
+        
+        # Get all excitations using gradient selection
+        default_sets = calc.get_default_excitation_sets()
+        all_a_idxs = []
+        all_i_idxs = []
+        for a_set, i_set in default_sets:
+            all_a_idxs.extend(a_set)
+            all_i_idxs.extend(i_set)
+        
+        if self.verbose >= 1:
+            print(f"Total excitations from gradient selection: {len(all_a_idxs)}")
+        
+        # Create fragment-pair specific sets
+        # Set 1: Fragment pair (0,1) 
+        set1_a, set1_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (0, 1))
+        
+        # Set 2: Fragment pair (1,2)
+        set2_a, set2_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (1, 2))
+        
+        # Set 3: Fragment pair (2,3) 
+        set3_a, set3_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (2, 3))
+        
+        # Set 4: Fragment pair (3,4)
+        set4_a, set4_i = self._get_fragment_pair_excitations(all_a_idxs, all_i_idxs, (3, 4))
+        
+        # Filter out empty sets and ensure minimum size
+        protocol1_sets = []
+        fragment_pairs = [(0,1), (1,2), (2,3), (3,4)]
+        for i, (a_set, i_set) in enumerate([(set1_a, set1_i), (set2_a, set2_i), (set3_a, set3_i), (set4_a, set4_i)]):
+            if len(a_set) > 0 and len(i_set) > 0:
+                protocol1_sets.append((a_set, i_set))
+                if self.verbose >= 1:
+                    print(f"Fragment pair {fragment_pairs[i]}: {len(a_set)} excitations")
+        
+        if len(protocol1_sets) == 0:
+            # Fallback: use first few excitations
+            protocol1_sets = [(all_a_idxs[:5], all_i_idxs[:5])]
+            if self.verbose >= 1:
+                print("No fragment-specific excitations found, using fallback set")
+        
+        # Assign excitation sets and run calculation
+        calc.excitation_parameter_sets = protocol1_sets
+        calc.perform_vqe_on_sets()
+        
+        # Check if we have valid VQE states for state interaction
+        valid_states = [state for state in calc.vqe_states if state.psi is not None and state.energy != float('inf')]
+        
+        if len(valid_states) >= 2:
+            final_energies, eigenvectors = calc.perform_state_interaction()
+            ground_state_energy = final_energies[0]
+            H_matrix = calc.result.hamiltonian_matrix.copy()
+            S_matrix = calc.result.overlap_matrix.copy()
+            min_diag_H = np.min(np.diag(calc.result.hamiltonian_matrix.real))
+        else:
+            # Fallback to best individual VQE energy if state interaction fails
+            valid_energies = [state.energy for state in valid_states]
+            ground_state_energy = min(valid_energies) if valid_energies else float('inf')
+            H_matrix = None
+            S_matrix = None
+            min_diag_H = ground_state_energy
+            if self.verbose >= 1:
+                print(f"Warning: Only {len(valid_states)} valid VQE states, using best individual energy")
+        
+        # Extract results
+        total_excitations = sum(len(a_set) for a_set, i_set in protocol1_sets)
+        
+        result = ComparisonResult(
+            method_name="LAS-VQE-NOSI Protocol 1",
+            energy=ground_state_energy,
+            n_excitations=total_excitations,
+            n_states=len(protocol1_sets),
+            H_matrix=H_matrix,
+            S_matrix=S_matrix,
+            min_diag_H=min_diag_H,
+            calculation_time=time.time() - start_time,
+            converged=any(calc.result.vqe_converged) if calc.result.vqe_converged else False,
+            additional_info={
+                'fragment_pairs': fragment_pairs[:len(protocol1_sets)],
+                'set_sizes': [len(a_set) for a_set, i_set in protocol1_sets],
+                'individual_vqe_energies': calc.result.individual_vqe_energies.copy(),
+                'valid_states': len(valid_states)
+            }
+        )
+        
+        self.results.append(result)
+        return result
     
-    def run_lasscf(self) -> ComparisonResult:
-        """Run LASSCF calculation"""
-        print("\nRunning LASSCF calculation...")
+    def run_protocol2(self) -> ComparisonResult:
+        """
+        Protocol 2: Random division of excitation sets
+        
+        Randomly divides all selected excitations into multiple sets of equal size
+        """
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("PROTOCOL 2: Random Division of Excitation Sets")
+            print("="*60)
+        
         start_time = time.time()
         
-        try:
-            # Mean-field calculation  
-            mf = scf.RHF(self.mol)
-            mf.kernel()
+        # Setup base calculation
+        calc = self._setup_base_calculation()
+        
+        # Get all excitations
+        default_sets = calc.get_default_excitation_sets()
+        all_a_idxs = []
+        all_i_idxs = []
+        for a_set, i_set in default_sets:
+            all_a_idxs.extend(a_set)
+            all_i_idxs.extend(i_set)
+        
+        if self.verbose >= 1:
+            print(f"Total excitations: {len(all_a_idxs)}")
+        
+        # Randomly shuffle excitations (with fixed seed for reproducibility)
+        random.seed(42)
+        combined_excitations = list(zip(all_a_idxs, all_i_idxs))
+        random.shuffle(combined_excitations)
+        
+        # Divide into 4 sets of equal size (matching C10's 5 fragments -> 4 adjacent pairs)
+        n_total = len(combined_excitations)
+        n_sets = 4
+        set_size = n_total // n_sets
+        
+        protocol2_sets = []
+        for i in range(n_sets):
+            start_idx = i * set_size
+            end_idx = (i + 1) * set_size if i < n_sets - 1 else n_total  # Last set gets remainder
             
-            # LASSCF calculation
-            las = LASSCF(mf, self.ncas_sub, self.nelec_sub, spin_sub=self.spin_sub)
-            las.state_average_(weights=[1.0], charges=[0]*len(self.ncas_sub), 
-                             spins=[0]*len(self.ncas_sub), smults=[1]*len(self.ncas_sub))
-            
-            # Use localized orbitals as initial guess
-            from pyscf.lo import orth
-            mo_coeff_loc = orth.orth_ao(self.mol, method='meta_lowdin')
-            las.kernel(mo_coeff_loc)
-            
-            calculation_time = time.time() - start_time
-            
-            return ComparisonResult(
-                method="LASSCF",
-                energy=las.e_tot,
-                time=calculation_time,
-                converged=las.converged,
-                additional_info={"mo_coeff": las.mo_coeff.copy()}
-            )
-            
-        except Exception as e:
-            print(f"LASSCF calculation failed: {e}")
-            return ComparisonResult(
-                method="LASSCF",
-                energy=float('inf'),
-                time=time.time() - start_time,
-                converged=False,
-                additional_info={"error": str(e)}
-            )
+            set_excitations = combined_excitations[start_idx:end_idx]
+            if len(set_excitations) > 0:
+                a_set, i_set = zip(*set_excitations)
+                protocol2_sets.append((list(a_set), list(i_set)))
+                
+                if self.verbose >= 1:
+                    print(f"Random set {i+1}: {len(a_set)} excitations")
+        
+        # Assign excitation sets and run calculation
+        calc.excitation_parameter_sets = protocol2_sets
+        calc.perform_vqe_on_sets()
+        
+        # Check if we have valid VQE states for state interaction
+        valid_states = [state for state in calc.vqe_states if state.psi is not None and state.energy != float('inf')]
+        
+        if len(valid_states) >= 2:
+            final_energies, eigenvectors = calc.perform_state_interaction()
+            ground_state_energy = final_energies[0]
+            H_matrix = calc.result.hamiltonian_matrix.copy()
+            S_matrix = calc.result.overlap_matrix.copy()
+            min_diag_H = np.min(np.diag(calc.result.hamiltonian_matrix.real))
+        else:
+            # Fallback to best individual VQE energy if state interaction fails
+            valid_energies = [state.energy for state in valid_states]
+            ground_state_energy = min(valid_energies) if valid_energies else float('inf')
+            H_matrix = None
+            S_matrix = None
+            min_diag_H = ground_state_energy
+            if self.verbose >= 1:
+                print(f"Warning: Only {len(valid_states)} valid VQE states, using best individual energy")
+        
+        # Extract results
+        total_excitations = sum(len(a_set) for a_set, i_set in protocol2_sets)
+        
+        result = ComparisonResult(
+            method_name="LAS-VQE-NOSI Protocol 2",
+            energy=ground_state_energy,
+            n_excitations=total_excitations,
+            n_states=len(protocol2_sets),
+            H_matrix=H_matrix,
+            S_matrix=S_matrix,
+            min_diag_H=min_diag_H,
+            calculation_time=time.time() - start_time,
+            converged=any(calc.result.vqe_converged) if calc.result.vqe_converged else False,
+            additional_info={
+                'random_seed': 42,
+                'set_sizes': [len(a_set) for a_set, i_set in protocol2_sets],
+                'individual_vqe_energies': calc.result.individual_vqe_energies.copy(),
+                'valid_states': len(valid_states)
+            }
+        )
+        
+        self.results.append(result)
+        return result
     
-    def run_las_vqe_protocol1(self, gradient_threshold: float = 0.001, 
-                             vqe_max_cycles: int = 100) -> ComparisonResult:
-        """Run LAS-VQE-NOSI Protocol 1 (fragment-based excitations)"""
-        print(f"\nRunning LAS-VQE-NOSI Protocol 1 (threshold={gradient_threshold}, cycles={vqe_max_cycles})...")
+    def run_lasvqe_all_excitations(self) -> ComparisonResult:
+        """
+        LAS-VQE: Single VQE optimization over all selected excitations
+        """
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("LAS-VQE: VQE Over All Excitations")
+            print("="*60)
+        
         start_time = time.time()
         
-        try:
-            # Setup calculation
-            las_calc = LASVQENOSI(
-                mol=self.mol,
-                ncas_sub=self.ncas_sub,
-                nelec_sub=self.nelec_sub,
-                basis=self.basis,
-                frag_atom_list=self.frag_atom_list,
-                gradient_threshold=gradient_threshold,
-                vqe_max_cycles=vqe_max_cycles,
-                verbose=self.verbose
-            )
-            
-            # Protocol 1: Fragment-based excitation selection
-            # Generate excitations based on fragment pairs
-            excitations = {}
-            for state_idx in range(len(self.frag_spin_orbs)):
-                state_excitations = []
-                
-                # Fragment pairs for C10: (0,1), (1,2), (2,3), (3,4)
-                frag_pairs = [(0,1), (1,2), (2,3), (3,4)]
-                
-                for frag_i, frag_j in frag_pairs:
-                    if frag_i in self.frag_spin_orbs and frag_j in self.frag_spin_orbs:
-                        frag_i_orbs = self.frag_spin_orbs[frag_i]
-                        frag_j_orbs = self.frag_spin_orbs[frag_j]
-                        
-                        # Add representative excitations between fragments
-                        for orb_i in frag_i_orbs[:2]:  # Limit to first 2 orbs per fragment
-                            for orb_j in frag_j_orbs[:2]:
-                                state_excitations.append((orb_i, orb_j))
-                
-                # Limit total excitations per state
-                if len(state_excitations) > 10:
-                    state_excitations = state_excitations[:10]
-                
-                excitations[state_idx] = state_excitations
-            
-            # Assign excitations to calculation object
-            las_calc.excitations = excitations
-            
-            # Run calculation
-            las_calc.run()
-            
-            calculation_time = time.time() - start_time
-            
-            return ComparisonResult(
-                method="LAS-VQE-NOSI-P1",
-                energy=las_calc.final_energy,
-                time=calculation_time,
-                converged=las_calc.converged,
-                additional_info={
-                    "individual_energies": las_calc.vqe_energies.copy(),
-                    "excitations_count": sum(len(exc) for exc in excitations.values()),
-                    "threshold": gradient_threshold,
-                    "max_cycles": vqe_max_cycles
-                }
-            )
-            
-        except Exception as e:
-            print(f"LAS-VQE-NOSI Protocol 1 failed: {e}")
-            return ComparisonResult(
-                method="LAS-VQE-NOSI-P1",
-                energy=float('inf'),
-                time=time.time() - start_time,
-                converged=False,
-                additional_info={"error": str(e)}
-            )
+        # Setup base calculation
+        calc = self._setup_base_calculation()
+        
+        # Get all excitations as a single set
+        default_sets = calc.get_default_excitation_sets()
+        all_a_idxs = []
+        all_i_idxs = []
+        for a_set, i_set in default_sets:
+            all_a_idxs.extend(a_set)
+            all_i_idxs.extend(i_set)
+        
+        if self.verbose >= 1:
+            print(f"Total excitations for single VQE: {len(all_a_idxs)}")
+        
+        # Single excitation set with all excitations
+        calc.excitation_parameter_sets = [(all_a_idxs, all_i_idxs)]
+        calc.perform_vqe_on_sets()
+        
+        # No state interaction needed for single state - just get VQE energy
+        vqe_energy = calc.result.individual_vqe_energies[0]
+        
+        result = ComparisonResult(
+            method_name="LAS-VQE (All Excitations)",
+            energy=vqe_energy,
+            n_excitations=len(all_a_idxs),
+            n_states=1,
+            H_matrix=None,  # No state interaction
+            S_matrix=None,  # No state interaction
+            min_diag_H=vqe_energy,  # Single diagonal element
+            calculation_time=time.time() - start_time,
+            converged=calc.result.vqe_converged[0],
+            additional_info={
+                'vqe_energy': vqe_energy,
+                'note': 'Single VQE state - no state interaction'
+            }
+        )
+        
+        self.results.append(result)
+        return result
     
-    def run_las_vqe_protocol2(self, gradient_threshold: float = 0.001, 
-                             vqe_max_cycles: int = 100) -> ComparisonResult:
-        """Run LAS-VQE-NOSI Protocol 2 (broader excitation selection)"""
-        print(f"\nRunning LAS-VQE-NOSI Protocol 2 (threshold={gradient_threshold}, cycles={vqe_max_cycles})...")
+    def run_casci_reference(self) -> ComparisonResult:
+        """
+        CASCI reference calculation
+        """
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("CASCI Reference")
+            print("="*60)
+        
         start_time = time.time()
         
-        try:
-            # Setup calculation
-            las_calc = LASVQENOSI(
-                mol=self.mol,
-                ncas_sub=self.ncas_sub,
-                nelec_sub=self.nelec_sub,
-                basis=self.basis,
-                frag_atom_list=self.frag_atom_list,
-                gradient_threshold=gradient_threshold,
-                vqe_max_cycles=vqe_max_cycles,
-                verbose=self.verbose
-            )
-            
-            # Protocol 2: More systematic excitation selection
-            excitations = {}
-            all_orb_indices = []
-            for frag_orbs in self.frag_spin_orbs.values():
-                all_orb_indices.extend(frag_orbs)
-            
-            for state_idx in range(len(self.frag_spin_orbs)):
-                state_excitations = []
-                
-                # Generate excitations within and between all fragments
-                for i, orb_i in enumerate(all_orb_indices[:10]):  # Limit orbital range
-                    for j, orb_j in enumerate(all_orb_indices[i+1:12]):  # Cross-fragment pairs
-                        if abs(orb_i - orb_j) >= 2:  # Avoid same-orbital excitations
-                            state_excitations.append((orb_i, orb_j))
-                
-                # Add some within-fragment excitations
-                for frag_orbs in list(self.frag_spin_orbs.values())[:3]:  # First 3 fragments
-                    if len(frag_orbs) >= 4:
-                        state_excitations.append((frag_orbs[0], frag_orbs[2]))
-                        state_excitations.append((frag_orbs[1], frag_orbs[3]))
-                
-                # Limit total excitations per state
-                if len(state_excitations) > 15:
-                    state_excitations = state_excitations[:15]
-                
-                excitations[state_idx] = state_excitations
-            
-            # Assign excitations to calculation object
-            las_calc.excitations = excitations
-            
-            # Run calculation
-            las_calc.run()
-            
-            calculation_time = time.time() - start_time
-            
-            return ComparisonResult(
-                method="LAS-VQE-NOSI-P2",
-                energy=las_calc.final_energy,
-                time=calculation_time,
-                converged=las_calc.converged,
-                additional_info={
-                    "individual_energies": las_calc.vqe_energies.copy(),
-                    "excitations_count": sum(len(exc) for exc in excitations.values()),
-                    "threshold": gradient_threshold,
-                    "max_cycles": vqe_max_cycles
-                }
-            )
-            
-        except Exception as e:
-            print(f"LAS-VQE-NOSI Protocol 2 failed: {e}")
-            return ComparisonResult(
-                method="LAS-VQE-NOSI-P2",
-                energy=float('inf'),
-                time=time.time() - start_time,
-                converged=False,
-                additional_info={"error": str(e)}
-            )
-    
-    def run_full_comparison(self, threshold: float = 0.001, max_cycle: int = 100) -> List[ComparisonResult]:
-        """Run full energy comparison with all methods"""
-        print("="*70)
-        print(f"C10 ENERGY COMPARISON - LAS-VQE-NOSI Methods")
-        print(f"Threshold: {threshold}, Max Cycles: {max_cycle}")
-        print(f"Basis: {self.basis}")
-        print("="*70)
+        # Setup molecule and LASSCF for orbital generation
+        calc = self._setup_base_calculation()
         
-        results = []
+        # CASCI energy is already computed in setup_casci_reference
+        casci_energy = calc.casci.e_tot
+        
+        if self.verbose >= 1:
+            print(f"CASCI energy: {casci_energy:.10f} hartree")
+        
+        result = ComparisonResult(
+            method_name="CASCI",
+            energy=casci_energy,
+            n_excitations=0,  # Full CI in active space
+            n_states=1,
+            H_matrix=None,
+            S_matrix=None,
+            min_diag_H=casci_energy,
+            calculation_time=time.time() - start_time,
+            converged=True,  # CASCI always converges if completed
+            additional_info={
+                'ncas_total': sum(self.ncas_sub),
+                'nelec_total': sum([sum(ne) for ne in self.nelec_sub])
+            }
+        )
+        
+        self.results.append(result)
+        return result
+    
+    def get_lasscf_energy(self) -> ComparisonResult:
+        """
+        Get LASSCF energy (already computed in base calculation)
+        """
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("LASSCF Energy (from base calculation)")
+            print("="*60)
+        
+        # Setup just to get LASSCF energy
+        calc = self._setup_base_calculation()
+        lasscf_energy = calc.las.e_tot
+        
+        if self.verbose >= 1:
+            print(f"LASSCF energy: {lasscf_energy:.10f} hartree")
+        
+        result = ComparisonResult(
+            method_name="LASSCF",
+            energy=lasscf_energy,
+            n_excitations=0,  # Mean-field reference
+            n_states=1,
+            H_matrix=None,
+            S_matrix=None,
+            min_diag_H=lasscf_energy,
+            calculation_time=0.0,  # Already computed
+            converged=calc.las.converged,
+            additional_info={
+                'fragments': self.ncas_sub,
+                'nelec_fragments': self.nelec_sub
+            }
+        )
+        
+        self.results.append(result)
+        return result
+    
+    def run_all_methods(self) -> List[ComparisonResult]:
+        """Run all comparison methods"""
+        if self.verbose >= 1:
+            print(f"\n{'='*80}")
+            print("C10 MOLECULE ENERGY COMPARISON STUDY")
+            print(f"Basis: {self.basis}, Gradient threshold: {self.gradient_threshold}")
+            print(f"{'='*80}")
         
         # Run all methods
-        results.append(self.run_casci())
-        results.append(self.run_lasscf())
-        results.append(self.run_las_vqe_protocol1(threshold, max_cycle))
-        results.append(self.run_las_vqe_protocol2(threshold, max_cycle))
+        self.run_protocol1()
+        self.run_protocol2()
+        self.run_lasvqe_all_excitations()
+        self.run_casci_reference()
+        self.get_lasscf_energy()
         
-        return results
+        return self.results
     
-    def write_results_markdown(self, results: List[ComparisonResult], 
-                              threshold: float, max_cycle: int, 
-                              filename: str = None) -> str:
-        """Write results to markdown file"""
-        if filename is None:
-            filename = f"C10_ENERGY_COMPARISON_t{threshold}_c{max_cycle}_{self.basis}.md"
-        
-        # Calculate energy differences relative to CASCI
-        casci_energy = None
-        for result in results:
-            if result.method == "CASCI" and result.converged:
-                casci_energy = result.energy
-                break
-        
-        markdown_content = f"""# C10 Energy Comparison Results
-
-## Calculation Parameters
-- **Molecule**: C10 polyene chain
-- **Basis Set**: {self.basis}
-- **VQE Gradient Threshold**: {threshold}
-- **VQE Max Cycles**: {max_cycle}
-- **Date**: {time.strftime('%Y-%m-%d %H:%M:%S')}
-
-## Molecular System
-- **Geometry**: `/home/jinx/repo/qchem/las_uccsd_data/polyenes/geometries/c10.xyz`
-- **Total Atoms**: {self.mol.natm}
-- **Total Electrons**: {self.mol.nelectron}
-- **Basis Functions**: {self.mol.nao}
-
-## Active Space Configuration
-- **Fragments**: 5 fragments of 2 orbitals each
-- **Active Orbitals**: {sum(self.ncas_sub)} total
-- **Active Electrons**: {sum(sum(pair) for pair in self.nelec_sub)} total
-- **Fragment Atoms**: {self.frag_atom_list}
-
-## Results Summary
-
-| Method | Energy (hartree) | ΔE vs CASCI (mEh) | Time (s) | Converged |
-|--------|------------------|-------------------|----------|-----------|
-"""
-        
-        for result in results:
-            if casci_energy is not None and result.converged:
-                delta_e = (result.energy - casci_energy) * 1000  # Convert to mEh
-                delta_str = f"{delta_e:+.3f}"
-            else:
-                delta_str = "N/A"
+    def print_comparison_summary(self):
+        """Print comprehensive comparison summary"""
+        if not self.results:
+            print("No results to display")
+            return
             
-            converged_symbol = "✓" if result.converged else "✗"
+        print(f"\n{'='*100}")
+        print("C10 ENERGY COMPARISON SUMMARY")
+        print(f"{'='*100}")
+        
+        # Main results table
+        print(f"{'Method':<25} {'Energy (hartree)':<18} {'ΔE (mEh)':<12} {'N_exc':<8} {'N_states':<10} {'Time (s)':<10} {'Conv':<6}")
+        print("-" * 100)
+        
+        # Find lowest energy for relative comparison
+        min_energy = min(r.energy for r in self.results)
+        
+        for result in self.results:
+            delta_e = (result.energy - min_energy) * 1000  # Convert to milliEh
+            conv_status = "✓" if result.converged else "✗"
             
-            markdown_content += f"| {result.method} | {result.energy:.10f} | {delta_str} | {result.time:.2f} | {converged_symbol} |\n"
+            print(f"{result.method_name:<25} {result.energy:<18.10f} {delta_e:<12.3f} "
+                  f"{result.n_excitations:<8} {result.n_states:<10} "
+                  f"{result.calculation_time:<10.2f} {conv_status:<6}")
         
-        markdown_content += f"""
-
-## Method Details
-
-### CASCI (Reference)
-- Complete Active Space Configuration Interaction
-- {sum(self.ncas_sub)} orbitals, {sum(sum(pair) for pair in self.nelec_sub)} electrons
-- Provides exact solution within active space
-
-### LASSCF
-- Localized Active Space Self-Consistent Field
-- Mean-field treatment of fragment interactions
-- Baseline for LAS-VQE comparisons
-
-### LAS-VQE-NOSI Protocol 1
-- Fragment-based excitation selection
-- Focus on nearest-neighbor fragment pairs: (0,1), (1,2), (2,3), (3,4)
-- Conservative excitation set for stable convergence
-
-### LAS-VQE-NOSI Protocol 2  
-- Broader excitation selection strategy
-- Inter-fragment and intra-fragment excitations
-- More complete correlation treatment
-
-## Analysis
-
-"""
+        print("-" * 100)
         
-        # Add energy analysis
-        converged_results = [r for r in results if r.converged]
-        if len(converged_results) >= 2:
-            energies = [r.energy for r in converged_results]
-            methods = [r.method for r in converged_results]
-            
-            markdown_content += f"""### Energy Hierarchy
-The energy ordering follows expected quantum chemistry hierarchy:
-"""
-            sorted_results = sorted(converged_results, key=lambda x: x.energy)
-            for i, result in enumerate(sorted_results):
-                markdown_content += f"{i+1}. **{result.method}**: {result.energy:.10f} hartree\n"
+        # Detailed diagonalization information
+        print(f"\nDETAILED DIAGONALIZATION INFORMATION")
+        print(f"{'='*60}")
         
-        # Add timing analysis
-        markdown_content += f"""
-
-### Computational Performance
-"""
-        for result in results:
-            if result.converged:
-                markdown_content += f"- **{result.method}**: {result.time:.2f} seconds\n"
+        for result in self.results:
+            if result.method_name.startswith("LAS-VQE-NOSI"):
+                print(f"\n{result.method_name}:")
+                print(f"  Total excitations: {result.n_excitations}")
+                print(f"  Number of states: {result.n_states}")
+                print(f"  Minimum diagonal H: {result.min_diag_H:.10f} hartree")
+                
+                if result.additional_info:
+                    if 'set_sizes' in result.additional_info:
+                        print(f"  Set sizes: {result.additional_info['set_sizes']}")
+                    if 'individual_vqe_energies' in result.additional_info:
+                        individual = result.additional_info['individual_vqe_energies']
+                        print(f"  Individual VQE energies: {[f'{e:.8f}' for e in individual]}")
+                
+                # Print H and S matrices
+                if result.H_matrix is not None:
+                    print(f"  H matrix:")
+                    self._print_matrix(result.H_matrix, "    ")
+                    
+                if result.S_matrix is not None:
+                    print(f"  S matrix:")
+                    self._print_matrix(result.S_matrix, "    ")
         
-        # Add additional insights
-        if casci_energy is not None:
-            las_vqe_results = [r for r in results if "LAS-VQE" in r.method and r.converged]
-            if las_vqe_results:
-                best_las_vqe = min(las_vqe_results, key=lambda x: x.energy)
-                improvement = (casci_energy - best_las_vqe.energy) * 1000
-                markdown_content += f"""
-
-### Key Findings
-- Best LAS-VQE method: **{best_las_vqe.method}**
-- Correlation recovery: **{abs(improvement):.3f} mEh** relative to CASCI
-- Fragment-based approach shows {'excellent' if abs(improvement) < 1 else 'good'} performance for C10 polyene
-"""
+        # Analysis
+        print(f"\nENERGY ORDERING ANALYSIS")
+        print(f"{'='*40}")
+        sorted_results = sorted(self.results, key=lambda x: x.energy)
+        for i, result in enumerate(sorted_results):
+            print(f"{i+1}. {result.method_name}: {result.energy:.10f} hartree")
         
-        markdown_content += f"""
+        # Expected hierarchy check
+        print(f"\nMETHOD EXPECTATIONS:")
+        print("• CASCI should provide the lowest energy (exact within active space)")
+        print("• LAS-VQE-NOSI methods should improve upon LASSCF")
+        print("• Protocol 1 (fragment-based) may capture different physics than Protocol 2 (random)")
+        print("• Single LAS-VQE should be between LASSCF and CASCI")
+    
+    def _print_matrix(self, matrix: np.ndarray, indent: str = ""):
+        """Print a matrix in readable format"""
+        for row in matrix:
+            row_str = "  ".join(f"{x.real:+.8f}" if abs(x.imag) < 1e-10 
+                              else f"{x.real:+.6f}{x.imag:+.6f}j" for x in row)
+            print(f"{indent}[{row_str}]")
 
-## Technical Details
-
-### Fragment Spin Orbitals
-```python
-{self.frag_spin_orbs}
-```
-
-### Convergence Summary
-"""
-        for result in results:
-            status = "Successful" if result.converged else "Failed"
-            markdown_content += f"- **{result.method}**: {status}\n"
-            if hasattr(result, 'additional_info') and result.additional_info:
-                if 'error' in result.additional_info:
-                    markdown_content += f"  - Error: {result.additional_info['error']}\n"
-        
-        markdown_content += f"""
-
----
-*Generated by C10EnergyComparison class*
-*Calculation completed: {time.strftime('%Y-%m-%d %H:%M:%S')}*
-"""
-        
-        # Write to file
-        filepath = f"{filename}"
-        with open(filepath, 'w') as f:
-            f.write(markdown_content)
-        
-        print(f"\nResults written to: {filepath}")
-        return filepath
 
 def main():
     """Main execution function"""
-    # Test parameters - can be modified for different studies
     
-    test_parameters = [
-        (0.0001, 10),   # Very tight threshold, few cycles
-        (0.0001, 100),  # Tight threshold, moderate cycles  
-        (0.0001, 1000), # Tight threshold, many cycles
-        (0.001, 10),    # Moderate threshold, few cycles
-        (0.001, 100),   # Moderate threshold, moderate cycles
-        (0.001, 1000),  # Moderate threshold, many cycles
-    ]
-    test_parameters = [
-            (0.1, 2),
-    ]
+    # Setup comparison study
+    comparison = C10EnergyComparison(
+        basis='sto-3g',
+        gradient_threshold=0.0001,
+        vqe_max_cycles=30,
+        verbose=1
+    )
     
-    print("C10 Energy Comparison Study")
-    print("=" * 50)
+    # Run all methods
+    results = comparison.run_all_methods()
     
-    for threshold, max_cycle in test_parameters:
-        print(f"\n{'='*20} Testing threshold={threshold}, max_cycle={max_cycle} {'='*20}")
-        
-        try:
-            # Create comparison object
-            calc = C10EnergyComparison(basis='6-31g', verbose=1)
-            
-            # Run comparison
-            results = calc.run_full_comparison(threshold=threshold, max_cycle=max_cycle)
-            
-            # Write results
-            filename = f"C10_ENERGY_COMPARISON_t{threshold}_c{max_cycle}_631g.md"
-            calc.write_results_markdown(results, threshold, max_cycle, filename)
-            
-            print(f"✓ Completed threshold={threshold}, max_cycle={max_cycle}")
-            
-        except Exception as e:
-            print(f"✗ Failed threshold={threshold}, max_cycle={max_cycle}: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        print("-" * 50)
+    # Print comprehensive summary
+    comparison.print_comparison_summary()
     
-    print("\n🎯 C10 energy comparison study completed!")
-    print("📁 Results written to c10/ directory")
+    return results
+
 
 if __name__ == "__main__":
-    main()
+    print("Starting C10 molecule energy comparison study...")
+    results = main()
+    print(f"\nComparison study completed with {len(results)} methods!")
