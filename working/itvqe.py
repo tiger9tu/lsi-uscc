@@ -14,42 +14,12 @@ from mrh.exploratory.citools import grad, lasci_ominus1, fockspace
 
 from scipy import linalg, optimize
 
-def kernel (fci, h1, h2, norb, nelec, norb_f=None, ci0_f=None,
-            tol=1e-8, gtol=1e-6, max_cycle=None, 
-            orbsym=None, wfnsym=None, ecore=0, **kwargs):
-    if max_cycle is None:
-        max_cycle = GLOBAL_MAX_CYCLE if GLOBAL_MAX_CYCLE is not None else 15000
-    if norb_f is None: norb_f = getattr (fci, 'norb_f', [norb])
-    if ci0_f is None: ci0_f = fci.get_init_guess (norb, nelec, norb_f, h1, h2)
-
-    frozen = getattr (fci, 'frozen', None)
-    psi = getattr (fci, 'psi', fci.build_psi (ci0_f, norb, norb_f, nelec,
-        log=log, frozen=frozen))
-    assert (psi.check_ci0_constr)
-    psi_options = {'gtol':     gtol,
-                   'maxiter':  max_cycle,
-                   'disp':     verbose>lib.logger.DEBUG}
-    h = [ecore, h1, h2]
-    psi_callback = psi.get_solver_callback (h)
-    res = optimize.minimize (psi.e_de, psi.x, args=(h,), method='BFGS',
-        jac=True, callback=psi_callback, options=psi_options)
-
-    fci.converged = res.success
-    e_tot = psi.energy_tot (res.x, h)
-    ci1 = psi.get_fcivec (res.x)
-    psi.x = res.x
-    psi.converged = res.success
-    psi.finalize_()
-    fci.psi = psi
-    return e_tot, ci1
-
 
 def my_e_de(x, h, position, psi):
     all_x = psi.x.copy()
     all_x[position] = x
     e_tot, all_jac = psi.e_de(all_x, h)
     return e_tot, all_jac[position]
-
 
 
 def cilas2f(lasci, norb_f, nelec_f):
@@ -140,7 +110,7 @@ n_vqe = len(frag_pairs)
 a_idxs = []
 i_idxs = []
 
-frag_pairs_sep_idxs = []
+frag_pairs_sep_idxs = [0]
 
 for frag_pair in frag_pairs:
     frag_pair_a_idxs, frag_pair_i_idxs = get_fragment_pair_excitations(a_idxs_selected, i_idxs_selected, frag_pair, frag_spin_orb)
@@ -151,7 +121,10 @@ for frag_pair in frag_pairs:
 
 ci0_f = cilas2f(las.ci, ncas_f, nelec_f)
 
-print("ci0_f = \n", ci0_f)
+frag_ci_sep_idx = []
+frag_ci_sizes = [c.size for c in ci0_f]
+frag_di_size = frag_ci_sizes
+frag_ci_sep_idx = [sum(frag_di_size[:j]) for j in range(0, len(frag_di_size)+1)]
 
 mc_uscc = mcscf.CASCI(mf, ncas, nelec)
 mc_uscc.mo_coeff = las.mo_coeff
@@ -169,22 +142,42 @@ psi = getattr (fci, 'psi', fci.build_psi (ci0_f, ncas, ncas_f, nelec))
 
 print("psi energy = ", psi.energy_tot(psi.x, h))
 
-print("number of excitations = ", len(a_idxs))
-print("len psi.x = ", len(psi.x))
-print("nconstr = ", psi.nconstr)
-print("uop.ngen_uniq = ", psi.uop.ngen_uniq)
-print("n ci rotation paramter = ", len(psi.x) - (psi.uop.ngen_uniq + psi.nconstr))
-
-print("frag_pairs_sep_idxs = ", frag_pairs_sep_idxs)
-
 for i in range(len(frag_pairs)):
     frag_pair = frag_pairs[i]
-    x_positions = []
-    x_positions.extend(0) # constr paramter
+    x_positions = [0] # constr paramter
 
-    uop_x_start = 1 if i == 0 else frag_pairs_sep_idxs[i-1] + 1
-    uop_x_end = frag_pairs_sep_idxs[i] + 1
+    uop_x_start = frag_pairs_sep_idxs[i] + 1
+    uop_x_end = frag_pairs_sep_idxs[i + 1] + 1
     x_positions.extend(range(uop_x_start, uop_x_end)) # uop paramter
+
+    ci_x_start = psi.nconstr + psi.uop.ngen_uniq
+    frag1_ci_x_start = ci_x_start + frag_ci_sep_idx[frag_pair[0]]
+    frag1_ci_x_end = frag1_ci_x_start + ci0_f[frag_pair[0]].size
+
+    frag2_ci_x_start = ci_x_start + frag_ci_sep_idx[frag_pair[1]]
+    frag2_ci_x_end = frag2_ci_x_start + ci0_f[frag_pair[1]].size
+
+    x_positions.extend(range(frag1_ci_x_start, frag1_ci_x_end))
+    x_positions.extend(range(frag2_ci_x_start, frag2_ci_x_end))
+
+    # print(f"Fragment pair {frag_pair} x positions: {x_positions}")
+    x0 = psi.x[x_positions]
+
+    maxiter = 10
+    res = optimize.minimize (my_e_de, x0, args=(h, x_positions, psi), method='BFGS',
+    jac=True, callback=psi.get_solver_callback (h), options={'maxiter': maxiter})
+
+    psi.x[x_positions] = res.x
+    psi.converged = res.success
+
+
+psi.finalize_()
+
+e_tot = psi.energy_tot (psi.x, h)
+print("Final energy after iterative VQE optimization = ", e_tot)
+    
+
+
 
 
 # print("xci size = ", sum ([c.size for c in psi.ci_f]))
