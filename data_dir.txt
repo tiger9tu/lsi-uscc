@@ -1,1 +1,0 @@
-/home/jinx/repo/qchem/las_uccsd_data
