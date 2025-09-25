@@ -18,7 +18,7 @@ name = 'C10'
 
 ncas_sub = (2, 2, 2, 2, 2)
 nelec_sub = ((1, 1), (1, 1), (1, 1), (1, 1), (1, 1))
-frag_atom_list = ((0, 2), (4, 6), (8, 10), (12, 14), (16, 18))  # C8 fragment atoms
+frag_atom_list = [[0,2], [10,12], [18,19], [13,11], [3,1]] # C8 fragment atoms
 
 # Fragment spin orbital indices (after LASSCF orbital ordering)
 frag_spin_orbs = {
@@ -28,9 +28,7 @@ frag_spin_orbs = {
             3: (6, 7, 16, 17),    # Fragment 3 spin orbitals
             4: (8, 9, 18, 19)     # Fragment 4 spin orbitals
         }
-        
-        
-
+        · 
 frag_pairs = ((0, 1), (1, 2), (2, 3), (3, 4))  # Fragment pairs for NOCI
 
 geom = """C -5.544122 0.214299 0.000000
