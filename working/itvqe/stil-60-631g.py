@@ -11,9 +11,19 @@ from mrh.exploratory.unitary_cc import lasuccsd
 from mrh.exploratory.unitary_cc.uccsd_sym0 import get_uccsd_op
 from mrh.exploratory.citools import grad, lasci_ominus1, fockspace
 
-
+from typing import Iterable, Union
 from scipy import linalg, optimize
 
+
+
+def flatten(seq: Iterable) -> list:
+    result = []
+    for item in seq:
+        if isinstance(item, (list, tuple, np.ndarray)):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+    return result
 
 def my_e_de(x, h, position, psi):
     all_x = psi.x.copy()
@@ -63,31 +73,67 @@ def get_fragment_pair_excitations(all_a_idxs, all_i_idxs, frag_pair, frag_spin_o
 
 # Initializing the molecule with RHF
 #===================================
-xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
-    H      1.000000000000   0.000000000000   0.000000000000
-    H      0.273746762116   2.195450598147   0.100000000000
-    H      1.232912762116   1.895450598147  -0.100000000000
-    H      0.507178110854   4.193780995243   0.049334760036
-    H      1.506140937609   3.988021397347  -0.049334760036
-    '''
+xyz = ''' C 0.637297 1.609894 0.271644
+C 1.671915 0.637125 0.095037
+C 1.555787 -0.429383 -0.818561
+C 2.601892 -1.301075 -1.027366
+C 3.804515 -1.141541 -0.343657
+C 3.944438 -0.092275 0.554759
+C 2.896357 0.779603 0.774827
+C -0.637289 1.610117 -0.271666
+C -1.671947 0.637404 -0.094976
+C -1.556248 -0.428352 0.819552
+C -2.602303 -1.300124 1.028279
+C -3.804491 -1.141341 0.343632
+C -3.944028 -0.092767 -0.555655
+C -2.895976 0.77916 -0.775661
+H 0.902253 2.448365 0.916227
+H 0.632452 -0.54494 -1.373252
+H 2.490883 -2.108975 -1.73971
+H 4.627795 -1.820335 -0.523243
+H 4.877985 0.045 1.08573
+H 3.011386 1.601166 1.472498
+H -0.901646 2.447808 -0.917488
+H -0.633279 -0.543245 1.374995
+H -2.491625 -2.107457 1.741317
+H -4.627761 -1.820157 0.52318
+H -4.877252 0.043926 -1.087344
+H -3.010699 1.600174 -1.474031
+'''
 
-ncas_f = [2,2,2]
-nelec_f = [2,2,2]
+
+
+maxiter = 10000
+epsilon=0.001
+ncas_f = (4, 2, 4)
+nelec_f = ((2, 2), (1, 1), (2, 2))
 spin_f = [1,1,1]
+frag_atom_list = ((1,2,3,4,5,6,15,16,17,18,19), (0,7,14,20), (8,9,10,11,12,13,21,22,23,24,25))
+
+
+
+
+frag_spin_orb = {
+            0: (0, 1, 2, 3, 10, 11, 12, 13),    # Fragment 0: Phenyl ring 1
+            1: (4, 5, 14, 15),                  # Fragment 1: Vinyl bridge
+            2: (6, 7, 8, 9, 16, 17, 18, 19)    # Fragment 2: Phenyl ring 2
+        }
+frag_pairs = ((0, 1), (1, 2),(0,2))  # Fragment pairs for NOCI
+
 
 ncas = sum(ncas_f)
-nelec = sum(nelec_f)
+nelec = sum(flatten(nelec_f))
 
-mol = gto.M (atom = xyz, basis = 'sto-3g', output='h4_sto3g.log.py',
+mol = gto.M (atom = xyz, basis = '6-31g', output='c8_631g.log',
     verbose=0)
 mf = scf.RHF (mol).run ()
 ref = mcscf.CASSCF (mf, ncas, nelec).run () # = FCI
-print("CASCF energy (6,6): {:.9f}".format(ref.e_tot))
+print("CASCF energy : {:.9f}".format(ref.e_tot))
 
 # Running LASSCF
 #===================================
 las = LASSCF (mf, ncas_f, nelec_f, spin_sub=spin_f)
-frag_atom_list = ((0,1),(2,3),(4,5))
+
 
 mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
 las.kernel (mo_loc)
@@ -97,14 +143,12 @@ print("las energy = ", las.e_tot)
 
 #Getting gradient for all cluster excitations through LAS-UCCSD gradients, may use your desired epsilon for selection
 #====================================================================================================================
-epsilon=0.001
+
 all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon=epsilon)
 
 
 
-frag_spin_orb = {0:[0,1,6,7], 1:[2,3,8,9], 2:[4,5,10,11]}
 
-frag_pairs = ((0,1), (1,2))  
 n_vqe = len(frag_pairs)
 
 a_idxs = []
@@ -128,7 +172,7 @@ frag_ci_sep_idx = [sum(frag_di_size[:j]) for j in range(0, len(frag_di_size)+1)]
 
 mc_uscc = mcscf.CASCI(mf, ncas, nelec)
 mc_uscc.mo_coeff = las.mo_coeff
-lasci_ominus1.GLOBAL_MAX_CYCLE = 15
+# lasci_ominus1.GLOBAL_MAX_CYCLE = 15
 mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs, i_idxs)
 mc_uscc.fcisolver.norb_f = ncas_f
 
@@ -139,7 +183,6 @@ h2eff = mc_uscc.get_h2eff()
 h = [e_core, h1eff, h2eff]
 
 psi = getattr (fci, 'psi', fci.build_psi (ci0_f, ncas, ncas_f, nelec))
-
 print("psi energy = ", psi.energy_tot(psi.x, h))
 
 for i in range(len(frag_pairs)):
@@ -163,38 +206,32 @@ for i in range(len(frag_pairs)):
     # print(f"Fragment pair {frag_pair} x positions: {x_positions}")
     x0 = psi.x[x_positions]
 
-    maxiter = 10
+    
     res = optimize.minimize (my_e_de, x0, args=(h, x_positions, psi), method='BFGS',
     jac=True, callback=psi.get_solver_callback (h), options={'maxiter': maxiter})
 
     psi.x[x_positions] = res.x
     psi.converged = res.success
+    print("psi iter count = ", psi.it_cnt)
 
 
-psi.finalize_()
 
 e_tot = psi.energy_tot (psi.x, h)
 print("Final energy after iterative VQE optimization = ", e_tot)
-    
 
 
 
+# compare with full vqe 
+psi.x = np.zeros_like(psi.x)
+# print("Reset psi.x to zero for full VQE, energy = ", psi.energy_tot(psi.x, h))
+res = optimize.minimize (psi.e_de, psi.x, args=(h, ), method='BFGS',
+    jac=True, callback=psi.get_solver_callback (h), options={'maxiter': maxiter})
 
-# print("xci size = ", sum ([c.size for c in psi.ci_f]))
-# print("psi.ci_f = ", psi.ci_f)
-# def nvar_tot (self):
-#     return self.nconstr + self.uop.ngen_uniq + sum ([c.size for c in self.ci_f])
+print("psi iter count = ", psi.it_cnt)
 
+psi.x = res.x
+e_tot = psi.energy_tot (psi.x, h)
+print("Final energy after full VQE optimization = ", e_tot)
 
-# for i, (a_idxs, i_idxs) in enumerate(zip(frag_pairs_a_idxs, frag_pairs_i_idxs)):
-#     mc_uscc = mcscf.CASCI(mf, ncas, nelec)
-#     mc_uscc.mo_coeff = las.mo_coeff
-#     lasci_ominus1.GLOBAL_MAX_CYCLE = 15
-#     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs, i_idxs)
-#     mc_uscc.fcisolver.norb_f = ncas_f
-    # e_tot, e_cas, ci, mo_coeff, mo_energy = mc_uscc.kernel(ci0=ci_iter)
-    # print("optimize iteration: ", i, " energy = ", e_tot)
-    # # print("ci = ", ci)
-    # print("ci shape = ", np.shape(ci))
 
 
