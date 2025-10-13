@@ -339,21 +339,24 @@ if __name__ == "__main__":
     H      1.674032054647   5.908472292654  -0.197836732111
     '''
 
-    data_dir = '/home/jinx/repo/qchem/las_uccsd_data'
+    data_dir = '../working/geom'
 
-    with open(data_dir + '/stilbene/geometries/stil-90.xyz', 'r', encoding='utf-8') as f:
+    with open(data_dir + '/stil-90.xyz', 'r', encoding='utf-8') as f:
         stil90xyz = f.read()
     
-    with open(data_dir + '/polyenes/geometries/c4.xyz', 'r', encoding='utf-8') as f:
+    with open(data_dir + '/stil-001.xyz', 'r', encoding='utf-8') as f:
+        stil001xyz = f.read()
+
+    with open(data_dir + '/c4.xyz', 'r', encoding='utf-8') as f:
         c4xyz = f.read()
 
-    with open(data_dir + '/polyenes/geometries/c6.xyz', 'r', encoding='utf-8') as f:
+    with open(data_dir + '/c6.xyz', 'r', encoding='utf-8') as f:
         c6xyz = f.read()
 
-    with open(data_dir + '/polyenes/geometries/c10.xyz', 'r', encoding='utf-8') as f:
+    with open(data_dir + '/c10.xyz', 'r', encoding='utf-8') as f:
         c10xyz = f.read()
 
-    with open(data_dir + '/circle/H10.xyz', 'r', encoding='utf-8') as f:
+    with open(data_dir + '/h10.xyz', 'r', encoding='utf-8') as f:
         h10_circle_xyz = f.read()
 
     # with open(data_dir + '/kremer/kremer-geometry.xyz', 'r', encoding='utf-8') as f:
@@ -449,10 +452,26 @@ if __name__ == "__main__":
     h8_631g['name'] = 'H8_631G'
     h8_631g['basis'] = '6-31g'
 
-    stil_sto3g_90 : MolConfig = {
-        'name': 'STIL_STO3G_90',
+    stil_631g_90 : MolConfig = {
+        'name': 'STIL_631G_90',
         'xyz': stil90xyz,
-        'basis': 'sto-3g',
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+    }
+
+    stil_631g_001 : MolConfig = {
+        'name': 'STIL_631G_001',
+        'xyz': stil001xyz,
+        'basis': '631g',
         'ncas': [4,2,4],
         'nelecas': [4,2,4],
         'spinsub': [1, 1, 1],
@@ -506,10 +525,10 @@ if __name__ == "__main__":
     c6_631g['name'] = 'C6_631G'
     c6_631g['basis'] = '6-31g'
 
-    c10_sto3g : MolConfig = {
-        'name': 'C10_STO3G',
+    c10_631g : MolConfig = {
+        'name': 'C10_631G',
         'xyz': c10xyz,
-        'basis': 'sto-3g',
+        'basis': '631g',
         'ncas': [2,2,2,2,2],
         'nelecas': [2,2,2,2,2],
         'spinsub': [1,1,1,1,1],
@@ -543,7 +562,7 @@ if __name__ == "__main__":
         'adj': circle_adj(5),
     }
 
-    mol_configs = [c6_631g, stil_sto3g_90, h10_circle_sto3g]
+    mol_configs = [stil_631g_001, stil_631g_90, c10_631g, h10_circle_sto3g]
 
     noci_test_01 : TestConfig = {
         'epsilon': 0.01,
