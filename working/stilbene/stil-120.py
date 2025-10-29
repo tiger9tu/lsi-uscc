@@ -65,8 +65,8 @@ class TestConfig(TypedDict):
     nn: bool
     # non-orthogonal configuration interaction parameters
     init_method: str # 'random' or 'uscc_opt' or 'load x'
-    max_nx: int  # max number of excitations per configuration
-    min_nc: int
+    # max_nx: int  # max number of excitations per configuration
+    # min_nc: int
     # test choices
     grad_test: bool
     noci_test: bool  
@@ -210,10 +210,13 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
 
 def test(mol_config, test_config,las, mol, mf):
     result = {}
+
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
-    if test_config['grad_test']:
-        result['tot_g'] = all_g
+    # if test_config['grad_test']:
+    #     result['tot_g'] = all_g
+    result['tot_g'] = all_g
+    result['g_sel'] = g_sel
 
     a_idxs_selected_nn = []
     i_idxs_selected_nn = []
@@ -283,7 +286,7 @@ def batch_test(mol_config, test_configs):
         spin = mol_config['spin']
 
     mol = gto.M(atom=mol_config['xyz'], basis=mol_config['basis'], symmetry = symmetry,
-        charge = charge, spin = spin,verbose=0,output=None)
+        charge = charge, spin = spin, verbose=4, output=mol_config['output'])
     if 'HF' in mol_config and mol_config['HF'] == 'ROHF':
         mf = scf.ROHF(mol).run()
     else:
@@ -295,10 +298,10 @@ def batch_test(mol_config, test_configs):
     mo_loc = las.localize_init_guess(mol_config['frag_atom_list'], mf.mo_coeff)
     las.kernel(mo_loc)
     
-    ref = mcscf.CASSCF(mf, sum(mol_config['ncas']), sum(mol_config['nelecas'])).run() # = FCI
+    ref = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    ref.mo_coeff = las.mo_coeff
+    ref.kernel() 
 
-    # mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
-    # mc_uscc.mo_coeff = las.mo_coeff
     for test_config in test_configs:
         
         result = test(mol_config, test_config, las, mol, mf)
@@ -316,33 +319,35 @@ def circle_adj(n):
 
 
 if __name__ == "__main__":
-    H4xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
-    H      1.000000000000   0.000000000000   0.000000000000
-    H      0.273746762116   2.195450598147   0.100000000000
-    H      1.232912762116   1.895450598147  -0.100000000000
-    '''
-
-    H6xyz = ''' H      0.000000000000   0.000000000000   0.000000000000
-    H      1.000000000000   0.000000000000   0.000000000000
-    H      0.273746762116   2.195450598147   0.100000000000
-    H      1.232912762116   1.895450598147  -0.100000000000
-    H      0.507178110854   4.193780995243   0.049334760036
-    H      1.506140937609   3.988021397347  -0.049334760036
-    '''
-    H8xyz = '''    H      0.000000000000   0.000000000000   0.000000000000
-    H      1.000000000000   0.000000000000   0.000000000000
-    H      0.273746762116   2.195450598147   0.100000000000
-    H      1.232912762116   1.895450598147  -0.100000000000
-    H      0.507178110854   4.193780995243   0.049334760036
-    H      1.506140937609   3.988021397347  -0.049334760036
-    H      0.845946518048   6.364231296231   0.197836732111
-    H      1.674032054647   5.908472292654  -0.197836732111
-    '''
-
-    data_dir = '../working/geom'
 
 
-    
+    data_dir = '../geom'
+
+    with open(data_dir + '/h4.xyz', 'r', encoding='utf-8') as f:
+        h4xyz = f.read()
+
+    with open(data_dir + '/h6.xyz', 'r', encoding='utf-8') as f:
+        h6xyz = f.read()
+
+    with open(data_dir + '/h8.xyz', 'r', encoding='utf-8') as f:
+        h8xyz = f.read()
+
+    with open(data_dir + '/h10.xyz', 'r', encoding='utf-8') as f:
+        h10xyz = f.read()
+
+
+    with open(data_dir + '/c4.xyz', 'r', encoding='utf-8') as f:
+        c4xyz = f.read()
+
+    with open(data_dir + '/c6.xyz', 'r', encoding='utf-8') as f:
+        c6xyz = f.read()
+
+    with open(data_dir + '/c8.xyz', 'r', encoding='utf-8') as f:
+        c8xyz = f.read()
+
+    with open(data_dir + '/c10.xyz', 'r', encoding='utf-8') as f:
+        c10xyz = f.read()
+
     with open(data_dir + '/stil-001.xyz', 'r', encoding='utf-8') as f:
         stil001xyz = f.read()
 
@@ -358,17 +363,6 @@ if __name__ == "__main__":
     with open(data_dir + '/stil-180.xyz', 'r', encoding='utf-8') as f:
         stil180xyz = f.read()       
 
-    with open(data_dir + '/c4.xyz', 'r', encoding='utf-8') as f:
-        c4xyz = f.read()
-
-    with open(data_dir + '/c6.xyz', 'r', encoding='utf-8') as f:
-        c6xyz = f.read()
-
-    with open(data_dir + '/c10.xyz', 'r', encoding='utf-8') as f:
-        c10xyz = f.read()
-
-    with open(data_dir + '/h10.xyz', 'r', encoding='utf-8') as f:
-        h10_circle_xyz = f.read()
 
     # with open(data_dir + '/kremer/kremer-geometry.xyz', 'r', encoding='utf-8') as f:
     #     kremer_xyz = f.read()
@@ -397,72 +391,14 @@ if __name__ == "__main__":
 
     h4_sto3g : MolConfig = {
         'name': 'H4_STO3G',
-        'xyz': H4xyz,
+        'xyz': h4xyz,
         'basis': 'sto-3g',
         'ncas': [2, 2],
         'nelecas': [2, 2],
         'spinsub': [1, 1],
         'frag_atom_list': ((0, 1), (2, 3)),
+        'output': 'h4_sto3g.out',
     }
-
-    
-    h6_sto3g : MolConfig = {
-        'name': 'H6_STO3G',
-        'xyz': H6xyz,
-        'basis': 'sto-3g',
-        'ncas': [2, 2, 2],
-        'nelecas': [2, 2, 2],
-        'spinsub': [1, 1, 1],
-        'frag_atom_list': ((0, 1), (2, 3), (4, 5)),
-        'frag_spin_orb': {
-            0: (0, 1, 6, 7),
-            1: (2, 3, 8, 9),
-            2: (4, 5, 10, 11)
-        },
-        'adj': empty_adj(3),
-    }
-
-    h6_631g = copy.deepcopy(h6_sto3g)
-    h6_631g['name'] = 'H6_631G'
-    h6_631g['basis'] = '6-31g'
-
-    h6_sto3g_a4 : MolConfig = {
-        'name': 'H6_STO3G_A4',
-        'xyz': H6xyz,
-        'basis': 'sto-3g',
-        'ncas': [2, 2],
-        'nelecas': [2, 2],
-        'spinsub': [1, 1],
-        'frag_atom_list': ((0, 1), (2, 3)),
-        'frag_spin_orb': {
-            0: (0, 1, 6, 7),
-            1: (2, 3, 8, 9),
-            2: (4, 5, 10, 11)
-        },
-        'adj': empty_adj(3),
-    }
-    
-    h8_sto3g : MolConfig = {
-        'name': 'H8_STO3G',
-        'xyz': H8xyz,
-        'basis': 'sto-3g',
-        'ncas': [2, 2, 2, 2],
-        'nelecas': [2, 2, 2, 2],
-        'spinsub': [1, 1, 1,1],
-        'frag_atom_list': ((0, 1), (2, 3), (4, 5), (6, 7)),
-        'frag_spin_orb': {
-            0: (0, 1, 8,9),
-            1: (2, 3, 10,11),
-            2: (4, 5, 12, 13),
-            3: (6, 7, 14, 15)
-        },
-        'adj': empty_adj(4),
-    }
-
-    h8_631g = copy.deepcopy(h8_sto3g)
-    h8_631g['name'] = 'H8_631G'
-    h8_631g['basis'] = '6-31g'
-
 
 
     stil_631g_001 : MolConfig = {
@@ -479,6 +415,7 @@ if __name__ == "__main__":
             2: (6,7,8,9,16,17,18,19)
         },
         'adj': empty_adj(3),
+        'output' : 'stil_631g_001.out',
     }
 
     stil_631g_60 : MolConfig = {
@@ -495,6 +432,7 @@ if __name__ == "__main__":
             2: (6,7,8,9,16,17,18,19)
         },
         'adj': empty_adj(3),
+        'output' : 'stil_631g_60.out',
     }
 
     stil_631g_90 : MolConfig = {
@@ -511,6 +449,7 @@ if __name__ == "__main__":
             2: (6,7,8,9,16,17,18,19)
         },
         'adj': empty_adj(3),
+        'output' : 'stil_631g_90.out',
     }
 
     stil_631g_120 : MolConfig = {
@@ -527,6 +466,7 @@ if __name__ == "__main__":
             2: (6,7,8,9,16,17,18,19)
         },
         'adj': empty_adj(3),
+        'output' : 'stil_631g_120.out',
     }
 
 
@@ -544,14 +484,15 @@ if __name__ == "__main__":
             2: (6,7,8,9,16,17,18,19)
         },
         'adj': empty_adj(3),
+        'output' : 'stil_631g_180.out',
     }
 
     # This c4 is too small, and I observed numericall error, that H and S have all identical
     # entries however the NOCI energy is lower 
-    c4_sto3g : MolConfig = {
-        'name': 'C4_STO3G',
+    c4_631g : MolConfig = {
+        'name': 'C4_631G',
         'xyz': c4xyz,
-        'basis': 'sto-3g',
+        'basis': '631g',
         'ncas': [2,2],
         'nelecas': [2,2],
         'spinsub': [1,1],
@@ -561,31 +502,45 @@ if __name__ == "__main__":
             1: (2,3,6,7),
         },
         'adj': circle_adj(2), # not sure about this
+        'output': 'c4_631g.out',
     }
 
-    c4_631g = copy.deepcopy(c4_sto3g)
-    c4_631g['name'] = 'C4_631G'
-    c4_631g['basis'] = '6-31g'
-
-    c6_sto3g : MolConfig = {
-        'name': 'C6_STO3G',
+    c6_631 : MolConfig = {
+        'name': 'C6_631G',
         'xyz': c6xyz,
-        'basis': 'sto-3g',
+        'basis': '631g',
         'ncas': [2,2,2],
         'nelecas': [2,2,2],
         'spinsub': [1,1,1],
-        'frag_atom_list': [[0,2], [10,12], [3,1]], # not sure about this
+        'frag_atom_list': [[0,2], [10,11], [3,1]], # not sure about this
         'frag_spin_orb': {
             0: (0,1,6,7),
             1: (2,3,8,9),
             2: (4,5,10,11),
         },
         'adj': circle_adj(3),
+        'output': 'c6_631g.out',
     }
 
-    c6_631g = copy.deepcopy(c6_sto3g)
-    c6_631g['name'] = 'C6_631G'
-    c6_631g['basis'] = '6-31g'
+
+    c8_631 : MolConfig = {
+        'name': 'C8_631G',
+        'xyz': c8xyz,
+        'basis': '631g',
+        'ncas': [2,2,2,2],
+        'nelecas': [2,2,2,2],
+        'spinsub': [1,1,1,1],
+        'frag_atom_list': [[0,2], [10,12], [13,11], [3,1]], 
+        'frag_spin_orb': {
+            0: (0,1,8,9),
+            1: (2,3,10,11),
+            2: (4,5,12,13),
+            3: (6,7,14,15),
+        },
+        'adj': circle_adj(3),
+        'output': 'c8_631g.out',
+    }
+
 
     c10_631g : MolConfig = {
         'name': 'C10_631G',
@@ -603,75 +558,62 @@ if __name__ == "__main__":
             4: (8,9,18,19)
         },
         'adj': circle_adj(5),
+        'output': 'c10_631g.out',
     }
 
+    mol_configs = [stil_631g_120]
+    # mol_configs = [h4_sto3g]
 
-    h10_circle_sto3g : MolConfig = {
-        'name': 'H10_CIRCLE_STO3G',
-        'xyz': h10_circle_xyz,
-        'basis': 'sto-3g',
-        'ncas': [2,2,2,2,2],
-        'nelecas': [2,2,2,2,2],
-        'spinsub': [1,1,1,1,1],
-        'frag_atom_list': [[0,1], [2,3], [4,5], [6,7], [8,9]],
-        'frag_spin_orb': {
-            0: (0,1,10,11),
-            1: (2,3,12,13),
-            2: (4,5,14,15),
-            3: (6,7,16,17),
-            4: (8,9,18,19)
-        },
-        'adj': circle_adj(5),
-    }
 
-    mol_configs = [stil_631g_001, stil_631g_60, stil_631g_90, stil_631g_120, stil_631g_180]
 
-    noci_test_01 : TestConfig = {
+    nosi_test_01 : TestConfig = {
         'epsilon': 0.01,
         'nn': False,
-        'max_nx': 10000,
-        'min_nc': 3,
         'init_method': 'uscc_opt',
         'frozen': 'CI',
         'grad_test': False,
         'noci_test': True
     }
         
-    noci_test_001 = copy.deepcopy(noci_test_01)
-    noci_test_001['epsilon'] = 0.001
+    # noci_test_001 = copy.deepcopy(noci_test_01)
+    # noci_test_001['epsilon'] = 0.001
 
-    noci_test_0001 = copy.deepcopy(noci_test_01)
-    noci_test_0001['epsilon'] = 0.0001
+    # noci_test_0001 = copy.deepcopy(noci_test_01)
+    # noci_test_0001['epsilon'] = 0.0001
 
-    tests = [
-        noci_test_01,
-        # noci_test_001,
-        # noci_test_0001
-    ]
+    eps = np.array([0.00792607, 0.00486175, 0.003190716, 0.00247079])
+
+    nosi_tests = []
+    for thre in eps:
+        nosi_test = copy.deepcopy(nosi_test_01)
+        nosi_test['epsilon'] = thre
+        nosi_tests.append(nosi_test)
 
 
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")
-        mol_results, ref_energy, las_energy = batch_test(mol_conf, tests)
+        mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
         
-        print(f"Reference energy: {ref_energy:.17f}")
-        print(f"MC-LAS energy: {las_energy:.17f}")
+        print(f"CASCI energy: {ref_energy:.17f}")
+        print(f"LASSCF energy: {las_energy:.17f}")
         for result in mol_results:
-            print(f"Total excitations: {result['tot_excitation_count']}")
+            print(f"Total excitations: {len(result['all_g'])}")
+            print(f"Selected excitations: {len(result['g_sel'])}")
+            
             # print(f"NN excitations: {result['excitation_count_nn']}")
 
             if 'las_uscc_eng' in result:
-                print(f"MC-USCC energy: {result['las_uscc_eng']:.17f}")
+                print(f"LAS-USCCSD-VQE energy: {result['las_uscc_eng']:.17f}")
             if 'las_uscc_noci_eng' in result:
-                print(f"MC-USCC-NOCI energy: {result['las_uscc_noci_eng']:.17f}")
-            if 'tot_g' in result:
-                print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
-            if 'nn_g' in result:
-                print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
+                print(f"LAS-USCCSD-NOSI energy: {result['las_uscc_noci_eng']:.17f}")
+            # if 'tot_g' in result:
+            #     print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
+            # if 'nn_g' in result:
+            #     print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
             if 'las_uscc_noci_vec' in result:
-                print("MC-USCC-NOCI vector: ", result['las_uscc_noci_vec'])
+                print("NOSI vector: ", result['las_uscc_noci_vec'])
             if 'min_ci_eng' in result:
-                print(f"Minimum CI energy: {result['min_ci_eng']:.17f}")
+                print(f"Minimum State energy: {result['min_ci_eng']:.17f}")
             print("\n")
         
         print("\n\n")

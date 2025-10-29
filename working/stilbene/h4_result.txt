@@ -1,0 +1,20 @@
+Molecule H4_STO3G: 
+overwrite output file: h4_sto3g.out
+Selected 13 CIs out of 13 total CIs
+Condition number of S matrix:  38.613426491688955
+CASCI energy: -2.18344705489128277
+LASSCF energy: -2.18247984175522891
+Total excitations: 146
+Selected excitations: 12
+LAS-USCCSD-VQE energy: -2.18342595282445062
+LAS-USCCSD-NOSI energy: -2.18342170713553596
+NOSI vector:  [-0.00750601+0.j  0.05318384+0.j  0.17487274+0.j -0.0230967 +0.j
+  0.66640983+0.j -0.34176739+0.j  0.54822618+0.j -0.08446783+0.j
+  0.60777989+0.j  0.39940927+0.j -0.13679253+0.j  0.18751046+0.j
+  0.04165188+0.j]
+Minimum State energy: -2.18247984175522936
+
+
+
+
+
