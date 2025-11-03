@@ -19,12 +19,7 @@ from scipy.linalg import eigh
 from scipy import optimize
 import sys
 
-from mrh.my_pyscf.tools import molden
-from pyscf.tools import molden as pyscf_molden
-
 VERBOSE = 0
-result = {}
-
 if len(sys.argv) > 1:
     try:
         AMPLITUDE = float(sys.argv[1])
@@ -117,7 +112,7 @@ def print_excitations(a_idxs, i_idxs):
         print([[int(x) for x in flatten(excitation)]])
 
 
-def nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf):
+def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf):
 
     nc = len(a_idxs_selected) + 1
     # we create ci for each excitation
@@ -126,12 +121,10 @@ def nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, m
 
     h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
     h2eff = mc_uscc.get_h2eff()
-    h = [e_core, h1eff, h2eff]
 
     las_ucc_trial_cis = []
     
     min_ci_eng = 99999.9
-    amps = []
     for i in range(nc):
         if( i == nc -1):
             amplitude = 0 # the last one is the reference state
@@ -149,39 +142,20 @@ def nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, m
         nelec = sum(mol_config['nelecas']) # not sure about this
         norb_f = getattr (fci, 'norb_f', [norb])
         psi =  getattr (fci, 'psi', fci.build_psi (las_ci0_f, norb, norb_f, nelec, frozen=test_config['frozen']))
-
-        # we can use line search to find the local minimum with respect to each state        
-        start, end, step = -4, 4, 0.2
-        amplitude_values = np.arange(start, end + step, step)
-        if i < nc - 1:
-            sign = 1 if g_sel[i][0] > 0 else -1
-            psi.x[psi.nconstr + i] = - sign * amplitude # not sure about the + - of the sign, try both
-            amps.append(- sign * amplitude)
-
-            # lowest_eng = 99999
-            # best_amp = 0
-            
-            # for amp in amplitude_values:
-            #     psi.x[psi.nconstr + i] = amp
-            #     s, eng = get_Sij_Hij(psi, psi, h)
-            #     if eng < lowest_eng:
-            #         lowest_eng = eng
-            #         best_amp = amp
-            
-            # psi.x[psi.nconstr + i] = best_amp
-            # best_amps.append(best_amp)
         
-        energy = psi.energy_tot(psi.x, h)
+        if i < nc - 1:
+            psi.x[psi.nconstr + i] = amplitude
+
+        energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
         if energy < min_ci_eng:
             min_ci_eng = energy
 
         las_ucc_trial_cis.append(psi)
-
-    result['amps'] = amps   
+        
     
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
-
+    h = [e_core, h1eff, h2eff]
 
 
     # Build S matrix incrementally, discarding linearly dependent CIs
@@ -235,10 +209,12 @@ def nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, m
 
 
 def test(mol_config, test_config,las, mol, mf):
-
+    result = {}
 
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
+    # if test_config['grad_test']:
+    #     result['all_g'] = all_g
     result['all_g'] = all_g
     result['g_sel'] = g_sel
 
@@ -287,7 +263,7 @@ def test(mol_config, test_config,las, mol, mf):
     result['las_uscc_eng'] =  mc_uscc.e_tot 
    
     if test_config['noci_test']:
-        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
     
     return result
    
@@ -585,8 +561,8 @@ if __name__ == "__main__":
         'output': 'c10_631g.out',
     }
 
-    # mol_configs = [stil_631g_001]
-    mol_configs = [h4_sto3g]
+    mol_configs = [stil_631g_60]
+    # mol_configs = [h4_sto3g]
 
 
 
@@ -605,7 +581,7 @@ if __name__ == "__main__":
     # noci_test_0001 = copy.deepcopy(noci_test_01)
     # noci_test_0001['epsilon'] = 0.0001
 
-    eps = np.array([0.00792607])
+    eps = np.array([0.0076, 0.005015, 0.00297421, 0.00252])
 
     nosi_tests = []
     for thre in eps:
@@ -630,14 +606,14 @@ if __name__ == "__main__":
                 print(f"LAS-USCCSD-VQE energy: {result['las_uscc_eng']:.17f}")
             if 'las_uscc_noci_eng' in result:
                 print(f"LAS-USCCSD-NOSI energy: {result['las_uscc_noci_eng']:.17f}")
+            # if 'tot_g' in result:
+            #     print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
+            # if 'nn_g' in result:
+            #     print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
             if 'las_uscc_noci_vec' in result:
                 print("NOSI vector: ", result['las_uscc_noci_vec'])
             if 'min_ci_eng' in result:
                 print(f"Minimum State energy: {result['min_ci_eng']:.17f}")
-            if 'g_sel' in result:
-                print("Selected gradients:\n", result['g_sel'])
-            if 'amps' in result:
-                print("Amplitudes:\n", result['amps'])
             print("\n")
         
         print("\n\n")

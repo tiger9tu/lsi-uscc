@@ -12,16 +12,10 @@ export OMP_NUM_THREADS=16
 source /home/tuy/repo/.venv/bin/activate
 
 
-/usr/bin/time -v  python h4.py 0.5 > h4_amp05_gradsign_neg_result.txt
-# /usr/bin/time -v  python h4.py 1 > h4_amp1_result.txt
-# /usr/bin/time -v  python h4.py 2 > h4_amp2_result.txt
-# /usr/bin/time -v  python h4.py -0.5 > h4_ampneg05_result.txt
-# /usr/bin/time -v  python h4.py -1 > h4_ampneg1_result.txt
-# /usr/bin/time -v  python h4.py -2 > h4_ampneg2_result.txt
 # /usr/bin/time -v  python stil-001.py > stil_001_result.txt
 # /usr/bin/time -v  python stil-60.py > stil_60_result.txt
 # /usr/bin/time -v  python stil-90.py > stil_90_result.txt
 # /usr/bin/time -v  python stil-120.py > stil_120_result.txt
-# /usr/bin/time -v  python stil-180.py > stil_180_result.txt
+/usr/bin/time -v  python stil-180.py > stil_180_result.txt
 
 

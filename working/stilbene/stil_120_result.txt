@@ -1,0 +1,12 @@
+Molecule STIL_631G_120: 
+overwrite output file: stil_631g_120.out
+Selected 53 CIs out of 53 total CIs
+Condition number of S matrix:  289.0320075720417
+Selected 77 CIs out of 81 total CIs
+Condition number of S matrix:  502322.20219377725
+Selected 124 CIs out of 133 total CIs
+Condition number of S matrix:  4639214.352518811
+Selected 174 CIs out of 183 total CIs
+Condition number of S matrix:  9600129.827640345
+CASCI energy: -537.00551220451370682
+LASSCF energy: -536.99932388088893731

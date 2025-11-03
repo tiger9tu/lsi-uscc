@@ -214,8 +214,8 @@ def test(mol_config, test_config,las, mol, mf):
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
     # if test_config['grad_test']:
-    #     result['tot_g'] = all_g
-    result['tot_g'] = all_g
+    #     result['all_g'] = all_g
+    result['all_g'] = all_g
     result['g_sel'] = g_sel
 
     a_idxs_selected_nn = []
