@@ -18,8 +18,8 @@ from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
 import sys
-
-VERBOSE = 0
+result = {}
+VERBOSE = 4
 if len(sys.argv) > 1:
     try:
         AMPLITUDE = float(sys.argv[1])
@@ -161,7 +161,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     # Build S matrix incrementally, discarding linearly dependent CIs
     selected_indices = []
     S_inc = np.zeros((0, 0), dtype=np.complex128)
-    threshold = 1e7  # You can adjust this threshold as needed
+    threshold = 8e5  # You can adjust this threshold as needed
 
     for idx, psi in enumerate(las_ucc_trial_cis):
         # Build S matrix for current selection + this CI
@@ -209,7 +209,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
 
 
 def test(mol_config, test_config,las, mol, mf):
-    result = {}
+    
 
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
@@ -300,7 +300,7 @@ def batch_test(mol_config, test_configs):
     mo_loc = las.localize_init_guess(mol_config['frag_atom_list'], mf.mo_coeff)
     las.kernel(mo_loc)
     
-    ref = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    ref = mcscf.CASCI(mf, sum(mol_config['ncas']), (6,4))
     ref.mo_coeff = las.mo_coeff
     ref.fix_spin_(ss=2) # triplet
     ref.kernel() 
@@ -578,7 +578,7 @@ if __name__ == "__main__":
         'output': 'c10_631g.out',
     }
 
-    mol_configs = [stil_631g_001]
+    mol_configs = [stil_triplet_631g_001]
     # mol_configs = [h4_sto3g]
 
 
@@ -598,7 +598,8 @@ if __name__ == "__main__":
     # noci_test_0001 = copy.deepcopy(noci_test_01)
     # noci_test_0001['epsilon'] = 0.0001
 
-    eps = np.array([0.0076, 0.005015, 0.00297421, 0.00252])
+    # eps = np.array([0.0076, 0.005015, 0.00297421, 0.00252])
+    eps = np.array([0.005015])
 
     nosi_tests = []
     for thre in eps:

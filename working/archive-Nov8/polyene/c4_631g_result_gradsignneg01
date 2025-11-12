@@ -1,0 +1,158 @@
+Using AMPLITUDE argument: -0.1
+Molecule C4_631G: 
+overwrite output file: c4_631g.out
+Selected 3 CIs out of 3 total CIs
+Condition number of S matrix:  971.9937414779986
+Selected 1 CIs out of 1 total CIs
+Condition number of S matrix:  1.0
+Selected 3 CIs out of 3 total CIs
+Condition number of S matrix:  971.9937414779986
+Selected 5 CIs out of 5 total CIs
+Condition number of S matrix:  2477.772521241559
+Selected 7 CIs out of 7 total CIs
+Condition number of S matrix:  4985.103429457121
+Selected 7 CIs out of 7 total CIs
+Condition number of S matrix:  4985.103429457121
+Selected 10 CIs out of 10 total CIs
+Condition number of S matrix:  9964.398519341066
+Selected 11 CIs out of 11 total CIs
+Condition number of S matrix:  12389.159893687574
+Selected 13 CIs out of 13 total CIs
+Condition number of S matrix:  17704.768778623555
+Selected 14 CIs out of 14 total CIs
+Condition number of S matrix:  20558.063716664605
+CASCI energy: -154.91764545394264019
+LASSCF energy: -154.91442004941421828
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+Total excitations: 146
+Selected excitations: 13
+LAS-USCCSD-VQE energy: -154.91709587160005412
+LAS-USCCSD-NOSI energy: -154.91711299442781069
+NOSI vector:  [-0.20860878+0.j  0.77033425+0.j  0.84713536+0.j -0.41730541+0.j
+  0.16587422+0.j -3.50746558+0.j -4.99071793+0.j  5.39011075+0.j
+  6.15180784+0.j -0.0457268 +0.j  1.84075104+0.j  0.11546758+0.j
+  0.80372866+0.j -0.06085374-0.j]
+Minimum State energy: -154.91442004941399091
+Amplitudes:
+ [-0.1, 0.1, -0.1, 0.1, -0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.1, -0.1, 0.1]
+
+
+
+
+

@@ -1,0 +1,6 @@
+output file: stil-90-t.log
+Found eris on scf object
+Initial loc2symm nonorthonormality: (np.float64(0.0), np.float64(0.0))
+Final loc2symm nonorthonormality: (np.float64(0.0), np.float64(0.0))
+LASSCF energy triplet =  -536.9558334497609
+CASCI energy triplet =  -536.0169732728692

@@ -19,7 +19,7 @@ from scipy.linalg import eigh
 from scipy import optimize
 import sys
 
-VERBOSE = 0
+VERBOSE = 4
 if len(sys.argv) > 1:
     try:
         AMPLITUDE = float(sys.argv[1])
@@ -131,6 +131,8 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         else:
             amplitude = AMPLITUDE # we should try different amplitudes
 
+        if VERBOSE >=1:
+            print("Amplitude = ", AMPLITUDE)
         mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
         mc_uscc_ci.mo_coeff = las.mo_coeff
         mc_uscc_ci.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
@@ -161,7 +163,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     # Build S matrix incrementally, discarding linearly dependent CIs
     selected_indices = []
     S_inc = np.zeros((0, 0), dtype=np.complex128)
-    threshold = 1e7  # You can adjust this threshold as needed
+    threshold = 1e5  # You can adjust this threshold as needed
 
     for idx, psi in enumerate(las_ucc_trial_cis):
         # Build S matrix for current selection + this CI
@@ -214,8 +216,8 @@ def test(mol_config, test_config,las, mol, mf):
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
 
     # if test_config['grad_test']:
-    #     result['tot_g'] = all_g
-    result['tot_g'] = all_g
+    #     result['all_g'] = all_g
+    result['all_g'] = all_g
     result['g_sel'] = g_sel
 
     a_idxs_selected_nn = []
@@ -308,7 +310,6 @@ def batch_test(mol_config, test_configs):
         results.append(result)
     
     return results, ref.e_tot, las.e_tot
-
 
 
 def empty_adj(n):
@@ -581,7 +582,8 @@ if __name__ == "__main__":
     # noci_test_0001 = copy.deepcopy(noci_test_01)
     # noci_test_0001['epsilon'] = 0.0001
 
-    eps = np.array([0.00792607, 0.00486175, 0.003190716, 0.00247079])
+    # eps = np.array([0.00792607, 0.00486175, 0.003190716, 0.00247079])
+    eps =  np.array([0.00486175])
 
     nosi_tests = []
     for thre in eps:
@@ -593,7 +595,7 @@ if __name__ == "__main__":
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")
         mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
-        
+        # mol_results, ref_energy, las_energy = batch_test(mol_conf, [])
         print(f"CASCI energy: {ref_energy:.17f}")
         print(f"LASSCF energy: {las_energy:.17f}")
         for result in mol_results:

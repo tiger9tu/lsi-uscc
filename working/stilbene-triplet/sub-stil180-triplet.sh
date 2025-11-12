@@ -16,6 +16,6 @@ source /home/tuy/repo/.venv/bin/activate
 # /usr/bin/time -v  python stil-60.py > stil_60_result.txt
 # /usr/bin/time -v  python stil-90.py > stil_90_result.txt
 # /usr/bin/time -v  python stil-120.py > stil_120_result.txt
-/usr/bin/time -v  python stil-triplet-180.py > stil_triplet_180_result.txt
+/usr/bin/time -v  python stil-triplet-180.py 2 > stil_triplet_180_result.txt
 
 

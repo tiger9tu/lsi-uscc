@@ -196,7 +196,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, amps, test_config, mol_config, mo
     # Build S matrix incrementally, discarding linearly dependent CIs
     selected_indices = []
     S_inc = np.zeros((0, 0), dtype=np.complex128)
-    threshold = 1e7  # You can adjust this threshold as needed
+    threshold = 1e5  # You can adjust this threshold as needed
 
     for idx, psi in enumerate(las_ucc_trial_cis):
         # Build S matrix for current selection + this CI

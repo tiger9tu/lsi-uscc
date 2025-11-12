@@ -15,6 +15,6 @@ source /home/tuy/repo/.venv/bin/activate
 # /usr/bin/time -v  python c4_631g.py > c4_631g_result.txt
 # /usr/bin/time -v  python c6_631g.py > c6_631g_result.txt
 # /usr/bin/time -v  python c8_631g.py > c8_631g_result.txt
-/usr/bin/time -v  python c10_631g.py > c10_631g_result.txt
+/usr/bin/time -v  python c10_631g.py 2 > c10_631g_result_t2.txt
 
 

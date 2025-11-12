@@ -1,0 +1,25 @@
+Using AMPLITUDE argument: 4.0
+Molecule H4_STO3G: 
+overwrite output file: h4_sto3g.out
+Selected 13 CIs out of 13 total CIs
+Condition number of S matrix:  28588.761022013336
+CASCI energy: -2.18344705489128632
+LASSCF energy: -2.18247984175523069
+Total excitations: 146
+Selected excitations: 12
+LAS-USCCSD-VQE energy: -2.18342595282445240
+LAS-USCCSD-NOSI energy: -2.18342205226522745
+NOSI vector:  [ 0.09527256+0.j -0.61106365+0.j -2.05471127+0.j -0.30773261+0.j
+  2.70273041+0.j  4.43708717+0.j -8.29948194+0.j  7.36901329+0.j
+  6.15126604+0.j  5.05903576+0.j  0.22433174+0.j  3.59257622+0.j
+ -1.52816234+0.j]
+Minimum State energy: -2.18247984175523069
+Selected gradients:
+ [(np.float64(-0.016944960724810946), 15), (np.float64(0.016944960724810946), 16), (np.float64(-0.024937925438294654), 54), (np.float64(0.024937925438294654), 55), (np.float64(-0.01983502972773063), 81), (np.float64(-0.020310821917423096), 82), (np.float64(-0.020310821917423096), 85), (np.float64(-0.01983502972773063), 86), (np.float64(0.023980270018872395), 93), (np.float64(-0.023980270018872395), 94), (np.float64(-0.016294488639227812), 120), (np.float64(0.016294488639227812), 121)]
+Amplitudes:
+ []
+
+
+
+
+

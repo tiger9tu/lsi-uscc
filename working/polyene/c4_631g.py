@@ -18,7 +18,7 @@ from enum import Enum
 from scipy.linalg import eigh
 from scipy import optimize
 import sys
-
+result = {}
 VERBOSE = 0
 if len(sys.argv) > 1:
     try:
@@ -126,6 +126,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     las_ucc_trial_cis = []
     
     min_ci_eng = 99999.9
+    amps = []
     for i in range(nc):
         if( i == nc -1):
             amplitude = 0 # the last one is the reference state
@@ -146,6 +147,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         
         if i < nc - 1:
             psi.x[psi.nconstr + i] = amplitude
+            amps.append(amplitude)
 
         energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
         if energy < min_ci_eng:
@@ -153,7 +155,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
 
         las_ucc_trial_cis.append(psi)
         
-    
+    result['amps'] = amps
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
     h = [e_core, h1eff, h2eff]
@@ -162,7 +164,7 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
     # Build S matrix incrementally, discarding linearly dependent CIs
     selected_indices = []
     S_inc = np.zeros((0, 0), dtype=np.complex128)
-    threshold = 1e7  # You can adjust this threshold as needed
+    threshold = 1e5  # You can adjust this threshold as needed
 
     for idx, psi in enumerate(las_ucc_trial_cis):
         # Build S matrix for current selection + this CI
@@ -210,15 +212,20 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
 
 
 def test(mol_config, test_config, las, mol, mf):
-    result = {}
+
 
     eps = test_config['epsilon']
+    # if test_config['factor'] is not None: # if there is factor then use factor to select epsilon
+    #     all_g_, g_sel_, a_idxs_all_, i_idxs_all_ = grad.get_grad_exact(las, 0)
+    #     sortg = np.sort(abs(all_g_))
+    #     n = len(all_g_)
+    #     thre_idx = int(np.floor(test_config['factor'] * n))
+    #     eps= sortg[-thre_idx]
     if test_config['factor'] is not None: # if there is factor then use factor to select epsilon
-        all_g_, g_sel_, a_idxs_all_, i_idxs_all_ = grad.get_grad_exact(las, 0)
-        sortg = np.sort(abs(all_g_))
-        n = len(all_g_)
-        thre_idx = int(np.floor(test_config['factor'] * n))
-        eps= sortg[-thre_idx]
+        g, gs, all_gen_indices_a, all_gen_indices_i = grad.get_grad_exact(las, epsilon=0.0)
+        sortg = np.sort(abs(g))
+        n = len(g)
+        eps = sortg[ int(np.floor((test_config['factor'] *n)))]
 
     all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, eps)
 
@@ -596,6 +603,7 @@ if __name__ == "__main__":
     # n = len(g)
     # eps = np.zeros(15)
     factors = np.arange(0.01, 0.16, 0.01)
+
     # x = np.array([int(np.floor(f * n)) for f in factors])
 
     # for i in range(10):
@@ -606,7 +614,7 @@ if __name__ == "__main__":
 
     nosi_tests = []
 
-    for i in range(10):
+    for i in range(6):
         nosi_test = copy.deepcopy(nosi_test_01)
         nosi_test['factor'] = factors[i]
         nosi_tests.append(nosi_test)
@@ -635,6 +643,8 @@ if __name__ == "__main__":
                 print("NOSI vector: ", result['las_uscc_noci_vec'])
             if 'min_ci_eng' in result:
                 print(f"Minimum State energy: {result['min_ci_eng']:.17f}")
+            if 'amps' in result:
+                print("Amplitudes:\n", result['amps'])
             print("\n")
         
         print("\n\n")
