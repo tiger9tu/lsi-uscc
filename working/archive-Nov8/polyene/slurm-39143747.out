@@ -1,0 +1,238 @@
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.01"
+	User time (seconds): 648.98
+	System time (seconds): 9.80
+	Percent of CPU this job got: 2071%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.80
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 272784
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 105010
+	Voluntary context switches: 43100
+	Involuntary context switches: 5949214
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.05"
+	User time (seconds): 652.55
+	System time (seconds): 9.76
+	Percent of CPU this job got: 2083%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.79
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 287848
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 96993
+	Voluntary context switches: 42020
+	Involuntary context switches: 4788560
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.1"
+	User time (seconds): 659.45
+	System time (seconds): 9.95
+	Percent of CPU this job got: 2086%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 254672
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 99931
+	Voluntary context switches: 43495
+	Involuntary context switches: 6152667
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.25"
+	User time (seconds): 683.59
+	System time (seconds): 10.14
+	Percent of CPU this job got: 2076%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:33.41
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 272076
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 102800
+	Voluntary context switches: 45220
+	Involuntary context switches: 6367989
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.5"
+	User time (seconds): 643.10
+	System time (seconds): 9.92
+	Percent of CPU this job got: 2080%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.38
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 317032
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 99367
+	Voluntary context switches: 42656
+	Involuntary context switches: 6694340
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -1.0"
+	User time (seconds): 638.10
+	System time (seconds): 9.42
+	Percent of CPU this job got: 2076%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.18
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 315356
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 96270
+	Voluntary context switches: 42013
+	Involuntary context switches: 6210774
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 620, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 320, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 279, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 135, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'amplitude' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -2.0"
+	User time (seconds): 673.27
+	System time (seconds): 9.96
+	Percent of CPU this job got: 2074%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.94
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 277376
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 99011
+	Voluntary context switches: 43985
+	Involuntary context switches: 5735141
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 376
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

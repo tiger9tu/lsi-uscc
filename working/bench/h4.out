@@ -1,0 +1,290 @@
+#INFO: **** input file is /project/lgagliardi/tuy/qchem/las-uscc-noci/working/bench/h4.py ****
+# run_tests.py
+
+from test_base import MyNOQIStudy, MolConfig
+
+# Define or import molecule config
+h4xyz = """H  0 0 -0.7
+H  0 0  0.7
+H  0 0  2.1
+H  0 0  3.5
+"""
+
+h4 = MolConfig(
+    name="H4_STO3G",
+    xyz=h4xyz,
+    basis="sto-3g",
+    ncas=[2, 2],
+    nelecas=[2, 2],
+    spinsub=[1, 1],
+    frag_atom_list=((0, 1), (2, 3)),
+    output = "h4.out",
+)
+
+# Instantiate your test class
+job = MyNOQIStudy(h4, AMPLITUDE=1.0, VERBOSE=4)
+
+# Run once the SCF -> LASSCF -> CASCI stack
+job.run_scf_stack_once()
+
+# Sweep multiple excitation selections without redoing LAS/CAS
+energies = job.run_selection_sweep(
+    label_prefix="testscan",
+    epsilons=[0.01, 0.001],
+    factors=[0.05, 0.1],
+)
+
+# Print or save results
+for label, record in energies.items():
+    print(f"\n[{label}]")
+    for key, val in record.items():
+        print(f"{key:>18s}: {val:.12f}")
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='midway3-login3.rcc.local', release='4.18.0-305.57.1.el8_4.x86_64', version='#1 SMP Tue Jul 5 17:55:55 EDT 2022', machine='x86_64')  Threads 1
+Python 3.9.19 | packaged by conda-forge | (main, Mar 20 2024, 12:50:21) 
+[GCC 12.3.0]
+numpy 2.0.2  scipy 1.13.1  h5py 3.14.0
+Date: Wed Nov 12 18:17:12 2025
+PySCF version 2.10.0
+PySCF path  /project/lgagliardi/tuy/qchem/.venv/lib/python3.9/site-packages/pyscf
+mrh path  /project/lgagliardi/tuy/qchem/mrh
+GIT HEAD (branch master) be911c8ae3c12e66ecff0b83733a890cec0899cf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 4
+[INPUT] num. electrons = 4
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT] Symbol           X                Y                Z      unit          X                Y                Z       unit  Magmom
+[INPUT]  1 H      0.000000000000   0.000000000000  -0.700000000000 AA    0.000000000000   0.000000000000  -1.322808287196 Bohr   0.0
+[INPUT]  2 H      0.000000000000   0.000000000000   0.700000000000 AA    0.000000000000   0.000000000000   1.322808287196 Bohr   0.0
+[INPUT]  3 H      0.000000000000   0.000000000000   2.100000000000 AA    0.000000000000   0.000000000000   3.968424861587 Bohr   0.0
+[INPUT]  4 H      0.000000000000   0.000000000000   3.500000000000 AA    0.000000000000   0.000000000000   6.614041435978 Bohr   0.0
+
+nuclear repulsion = 1.63792946237143
+number of shells = 4
+number of NR pGTOs = 12
+number of NR cGTOs = 4
+basis = sto-3g
+ecp = {}
+CPU time:         2.70
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+diis_damp = 0
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/tuy/tmpwh45hngz
+max_memory 4000 MB (current use 105 MB)
+Set gradient conv threshold to 3.16228e-05
+Initial guess from minao.
+init E= -1.2761456573707
+  HOMO = -0.207036907461021  LUMO = 0.0522899979720032
+cycle= 1 E= -1.88335365858002  delta_E= -0.607  |g|= 0.0624  |ddm|= 1.44
+  HOMO = -0.306739761943627  LUMO = 0.146358902789026
+cycle= 2 E= -1.88716839787764  delta_E= -0.00381  |g|= 0.0228  |ddm|= 0.147
+  HOMO = -0.313047353372388  LUMO = 0.154773586051814
+cycle= 3 E= -1.88778420772163  delta_E= -0.000616  |g|= 0.00293  |ddm|= 0.076
+  HOMO = -0.313733682483436  LUMO = 0.154782962897679
+cycle= 4 E= -1.88779030269346  delta_E= -6.09e-06  |g|= 4.3e-05  |ddm|= 0.00795
+  HOMO = -0.313695088858287  LUMO = 0.154760569443717
+cycle= 5 E= -1.88779030398268  delta_E= -1.29e-09  |g|= 2.33e-05  |ddm|= 6.7e-05
+  HOMO = -0.31368072665619  LUMO = 0.154752242707876
+cycle= 6 E= -1.88779030426638  delta_E= -2.84e-10  |g|= 1.59e-05  |ddm|= 2.49e-05
+  HOMO = -0.313650810587157  LUMO = 0.154736222243763
+Extra cycle  E= -1.88779030448405  delta_E= -2.18e-10  |g|= 5.23e-06  |ddm|= 3.81e-05
+converged SCF energy = -1.88779030448405
+
+******** LASSCF flags ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+Divided into 2 LAS spaces
+LAS 0 : (1e+1e, 2o)
+LAS 1 : (1e+1e, 2o)
+nroots = 1
+max_cycle_macro = 50
+max_cycle_micro = 5
+conv_tol_grad = 0.0001
+max_memory 4000 MB (current use 124 MB)
+fragment 0 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+fragment 1 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.401116992700293), np.float64(-1.4011169927002953)]
+LASCI macro 0 : E = -1.97783360255057 ; |g_int| = 0.180809445382031 ; |g_ci| = 0.00570871175812507 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.141282132453249 ; |x_ci| = 0.0116573694402083
+LASCI micro 2 : |x_orb| = 0.187968986789928 ; |x_ci| = 0.0243215084577786
+LASCI micro 3 : |x_orb| = 0.188415525801063 ; |x_ci| = 0.023097220934206
+LASCI micro 4 : |x_orb| = 0.188141559817145 ; |x_ci| = 0.0232517924892859
+LASCI micro 5 : |x_orb| = 0.18781310509628 ; |x_ci| = 0.0229199147524324
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.4026291097518628), np.float64(-1.402629110075677)]
+LASCI macro 1 : E = -2.00342004668098 ; |g_int| = 0.0913149962551078 ; |g_ci| = 2.19154427416987e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0718667336655556 ; |x_ci| = 0.00496953235697782
+LASCI micro 2 : |x_orb| = 0.0932022801846707 ; |x_ci| = 0.0103547799707577
+LASCI micro 3 : |x_orb| = 0.0933877785513086 ; |x_ci| = 0.0105606991682398
+LASCI micro 4 : |x_orb| = 0.0932846271919196 ; |x_ci| = 0.0105996673269432
+LASCI micro 5 : |x_orb| = 0.0932206616716585 ; |x_ci| = 0.0105234342571995
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.4008144592030476), np.float64(-1.4008144595122967)]
+LASCI macro 2 : E = -2.00985123379944 ; |g_int| = 0.0467032256459127 ; |g_ci| = 4.02291450075278e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0370747164453636 ; |x_ci| = 0.00288971002579997
+LASCI micro 2 : |x_orb| = 0.0479689206777007 ; |x_ci| = 0.00516074508189772
+LASCI micro 3 : |x_orb| = 0.0480721117688053 ; |x_ci| = 0.00524575981364119
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3983159533701457), np.float64(-1.398315953600675)]
+LASCI macro 3 : E = -2.01154650853614 ; |g_int| = 0.0238535213092901 ; |g_ci| = 1.83254263926811e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0190844616254103 ; |x_ci| = 0.00158556558630518
+LASCI micro 2 : |x_orb| = 0.0246764717464552 ; |x_ci| = 0.00261568249925748
+LASCI micro 3 : |x_orb| = 0.0247322130750067 ; |x_ci| = 0.00265603305863197
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3966212665896949), np.float64(-1.396621266747556)]
+LASCI macro 4 : E = -2.01199183069496 ; |g_int| = 0.0121669939802013 ; |g_ci| = 6.52549386373285e-07 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00978278230042991 ; |x_ci| = 0.000840001740748276
+LASCI micro 2 : |x_orb| = 0.0126463047472171 ; |x_ci| = 0.00133090305176429
+LASCI micro 3 : |x_orb| = 0.0126757990994871 ; |x_ci| = 0.00135095910919577
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3956464686576782), np.float64(-1.3956464687599741)]
+LASCI macro 5 : E = -2.01210821763548 ; |g_int| = 0.00619929234618306 ; |g_ci| = 2.39098963363973e-07 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00499842898448363 ; |x_ci| = 0.000436490753152679
+LASCI micro 2 : |x_orb| = 0.00646085541719081 ; |x_ci| = 0.00067751287136708
+LASCI micro 3 : |x_orb| = 0.006476196915417 ; |x_ci| = 0.000687637220520354
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3951208537747348), np.float64(-1.395120853838573)]
+LASCI macro 6 : E = -2.01213851039507 ; |g_int| = 0.00315654314537507 ; |g_ci| = 9.44643486707955e-08 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00254889304395802 ; |x_ci| = 0.000224506409384119
+LASCI micro 2 : |x_orb| = 0.00329447873189464 ; |x_ci| = 0.000344850012858051
+LASCI micro 3 : |x_orb| = 0.00330237710432281 ; |x_ci| = 0.000349986434811996
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3948456778224227), np.float64(-1.394845677861177)]
+LASCI macro 7 : E = -2.01214637500068 ; |g_int| = 0.00160664900976764 ; |g_ci| = 4.05873121611373e-08 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00129837217734115 ; |x_ci| = 0.00011486275646523
+LASCI micro 2 : |x_orb| = 0.00167812265661148 ; |x_ci| = 0.000175497173207903
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3947114868810369), np.float64(-1.3947114869058983)]
+LASCI macro 8 : E = -2.0121484106391 ; |g_int| = 0.000819648367245233 ; |g_ci| = 5.04019577078326e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.000663471620328175 ; |x_ci| = 5.91830517951735e-05
+LASCI micro 2 : |x_orb| = 0.000856461460338397 ; |x_ci| = 8.82773722437489e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3946335884964962), np.float64(-1.3946335885113852)]
+LASCI macro 9 : E = -2.01214894053067 ; |g_int| = 0.000417932555748422 ; |g_ci| = 1.60112982012155e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.000338336674123957 ; |x_ci| = 3.00454683700654e-05
+LASCI micro 2 : |x_orb| = 0.000436814368341793 ; |x_ci| = 4.51425498374108e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3945954621440948), np.float64(-1.394595462152729)]
+LASCI macro 10 : E = -2.01214907833876 ; |g_int| = 0.000213112027111069 ; |g_ci| = 1.00858549743806e-06 ; |g_x| = 0
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.3945812948489122), np.float64(-1.394581294854568)]
+LASCI macro 11 : E = -2.01214910555206 ; |g_int| = 0.000141039735073721 ; |g_ci| = 2.53362579160603e-07 ; |g_x| = 0
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.39457257599409), np.float64(-1.394572575997851)]
+LASCI macro 12 : E = -2.01214911747167 ; |g_int| = 9.335018520911e-05 ; |g_ci| = 2.51813723052039e-07 ; |g_x| = 0
+LASCI converged after 13 cycles
+LASCI E = -2.01214911747167 ; |g_int| = 9.335018520911e-05 ; |g_ci| = 2.51813723052039e-07 ; |g_ext| = 0
+Fragment 0 natural orbitals
+Natural occ [1.84147812 0.15852188]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2       
+0 H 1s          -0.61775  -0.83969
+1 H 1s          -0.61725   0.88341
+2 H 1s          -0.01554  -0.22083
+3 H 1s           0.09932  -0.06460
+Fragment 1 natural orbitals
+Natural occ [1.84147812 0.15852188]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2       
+0 H 1s          -0.09932   0.06460
+1 H 1s           0.01554   0.22083
+2 H 1s           0.61725  -0.88341
+3 H 1s           0.61775   0.83969
+LASCI energy = -2.01214911747167
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 129 MB)
+******** <class 'pyscf.fci.direct_spin1.FCISolver'> ********
+max. cycles = 200
+conv_tol = 1e-08
+davidson only = False
+linear dependence = 1e-12
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+Density matrix diagonal elements [1.78992395 0.21007605 1.78992395 0.21007605]
+CASCI converged
+CASCI E = -2.02907049359196  E(CI) = -3.66699995596339  S^2 = 0.0000000
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 130 MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 47 degrees of freedom

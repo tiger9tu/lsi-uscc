@@ -1,0 +1,856 @@
+#INFO: **** input file is /project/lgagliardi/tuy/qchem/las-uscc-noci/working/bench/new.py ****
+# lasscf_test_framework_refactored.py
+from __future__ import annotations
+import numpy as np
+from typing import Iterable, List, Any, Tuple, Dict, Optional, TypedDict
+from dataclasses import dataclass, field
+import functools, time, sys
+
+# External deps
+from pyscf import gto, scf, mcscf
+from scipy.linalg import eigh
+
+# mrh stack
+from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
+from mrh.exploratory.unitary_cc import lasuccsd
+from mrh.exploratory.citools import grad, fockspace
+
+# ------------------ Utilities ------------------
+def timeit(func=None, *, label=None, logger=print):
+    if func is None:
+        return lambda f: timeit(f, label=label, logger=logger)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        self = args[0] if args else None
+        verbose = getattr(self, "VERBOSE", 1) if self is not None else 1
+        t0 = time.perf_counter()
+        out = func(*args, **kwargs)
+        t1 = time.perf_counter()
+        if verbose >= 1:
+            logger(f"{label or func.__name__} took {(t1 - t0)*1000:.3f} ms")
+        return out
+    return wrapper
+
+def print_matrix(mat):
+    for row in mat:
+        print("  ".join(f"{x:.17f}" for x in row))
+
+def cilas2f(lasci, norb_f, nelec_f):
+    """Convert LAS CI (per-fragment) to full Fock-space CI."""
+    ci_f = []
+    for i, ci in enumerate(lasci):
+        ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
+    return ci_f
+
+
+# ------------------ Config type for molecules ------------------
+class MolConfig(TypedDict, total=False):
+    name : str
+    xyz: str
+    basis: str
+    ncas: List[int]
+    nelecas: List[int]
+    spinsub: List[int]
+    frag_atom_list: Any
+    output: str
+    symmetry: Optional[str]
+    charge: Optional[int]
+    spin: Optional[int]
+    HF: Optional[str]
+    frag_spin_orb: Optional[Dict[int, Tuple[int, ...]]]
+    adj: Optional[List[List[int]]]
+
+# ===============================================================
+# Base test class: holds ALL configuration (no TestConfig anymore)
+# ===============================================================
+@dataclass
+class LASCCTestBase:
+    # --- Required molecule config ---
+    mol_conf: MolConfig
+
+    # --- Global knobs (were globals; now per-instance) ---
+    VERBOSE: int = 3                 # print level
+    LINEARIZE: bool = True           # linearize USCC building for NOQI
+    THRESHOLD_COND: float = 8e5      # condition-number cutoff in NOQI
+    AMPLITUDE: float = 1.0           # single-excitation amplitude for NOQI trials
+
+    # --- Optional runtime toggles ---
+    run_noqi_after_vqe: bool = True  # whether to run NOQI/NOCI after each VQE selection
+
+    # --- Internal storage (reused across sweeps) ---
+    mol: Optional[gto.Mole] = field(init=False, default=None)
+    mf: Optional[scf.hf.SCF] = field(init=False, default=None)
+    las: Optional[LASSCF] = field(init=False, default=None)
+    casci_ref: Optional[mcscf.CASCI] = field(init=False, default=None)
+
+    # Results organized per selection label
+    energies: Dict[str, Dict[str, float]] = field(init=False, default_factory=dict)  # label -> {RHF, LASSCF, CASCI, LAS-USCC-VQE, LAS-USCC-NOQI}
+    selection_records: Dict[str, Dict[str, Any]] = field(init=False, default_factory=dict)  # label -> {a_idxs, i_idxs, notes...}
+
+    # ---------------- Core stack (run once) ----------------
+    @timeit(label="RHF/ROHF")
+    def run_rhf(self):
+        symm = self.mol_conf.get('symmetry')
+        chg  = self.mol_conf.get('charge')
+        spin = self.mol_conf.get('spin')
+        self.mol = gto.M(
+            atom=self.mol_conf['xyz'],
+            basis=self.mol_conf['basis'],
+            symmetry=symm,
+            charge=chg,
+            spin=spin,
+            verbose=max(self.VERBOSE, 4),  # leave PySCF at 4 if you're chatty
+            output=self.mol_conf.get('output', None),
+        )
+        if self.mol_conf.get('HF') == 'ROHF':
+            self.mf = scf.ROHF(self.mol).run()
+        else:
+            self.mf = scf.RHF(self.mol).run()
+
+    @timeit(label="LASSCF kernel")
+    def run_lasscf(self):
+        assert self.mf is not None and self.mol is not None
+        ncas = self.mol_conf['ncas']
+        nele = self.mol_conf['nelecas']
+        spinsub = self.mol_conf['spinsub']
+        frag_atoms = self.mol_conf['frag_atom_list']
+
+        las = LASSCF(self.mf, ncas, nele, spin_sub=spinsub, ouput=None)
+        mo_loc = las.localize_init_guess(frag_atoms, self.mf.mo_coeff)
+        las.kernel(mo_loc)
+        self.las = las
+        if self.VERBOSE >= 2:
+            print(f"LASSCF energy: {las.e_tot:.17f}")
+
+    @timeit(label="CASCI (ref) kernel")
+    def run_casci(self):
+        assert self.mf is not None and self.las is not None
+        nact = sum(self.mol_conf['ncas'])
+        nelec = sum(self.mol_conf['nelecas'])
+        ref = mcscf.CASCI(self.mf, nact, nelec)
+        ref.mo_coeff = self.las.mo_coeff
+        ref.kernel()
+        self.casci_ref = ref
+        if self.VERBOSE >= 2:
+            print(f"CASCI energy: {ref.e_tot:.17f}")
+
+    def run_scf_stack_once(self, label: str = "base"):
+        """Run RHF->LASSCF->CASCI exactly once (store reference energies under 'label')."""
+        self.run_rhf()
+        self.run_lasscf()
+        self.run_casci()
+        self.energies[label] = {
+            "RHF": float(self.mf.e_tot),
+            "LASSCF": float(self.las.e_tot),
+            "CASCI": float(self.casci_ref.e_tot),
+        }
+
+    # ---------------- Excitation selection ----------------
+    def select_excitations(self, *, epsilon: Optional[float]=None, factor: Optional[float]=None) -> Tuple[List, List, Dict[str, Any]]:
+        """
+        Choose excitations by either numeric epsilon (magnitude cutoff) or percentile 'factor' in (0,1].
+        Returns (a_idxs_selected, i_idxs_selected, meta)
+        """
+        assert self.las is not None
+        if factor is not None:
+            g_all, _, _, _ = grad.get_grad_exact(self.las, epsilon=0.0)
+            sortg = np.sort(np.abs(g_all))
+            n = len(sortg)
+            k = int(np.floor(factor * n))
+            k = min(max(k, 1), n)
+            epsilon = sortg[-k]
+            if self.VERBOSE >= 2:
+                print(f"[selection] factor={factor:.4f} -> epsilon={epsilon:.6e}")
+
+        if epsilon is None:
+            epsilon = 0.0
+
+        all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(self.las, epsilon)
+
+        if self.VERBOSE >= 2:
+            print("total excitation count:", len(all_g))
+            print("selected excitation count:", len(g_sel))
+
+        meta = dict(epsilon=epsilon, factor=factor, total=len(all_g), selected=len(g_sel))
+        return a_idxs_selected, i_idxs_selected, meta
+
+    # ---------------- VQE run for a given selection ----------------
+    @timeit(label="LAS-USCC-VQE kernel")
+    def run_vqe(self, a_idxs_selected, i_idxs_selected) -> Tuple[mcscf.CASCI, float]:
+        assert self.mf is not None and self.las is not None and self.mol is not None
+        nact = sum(self.mol_conf['ncas'])
+        nelec = sum(self.mol_conf['nelecas'])
+        mc_uscc = mcscf.CASCI(self.mf, nact, nelec)
+        mc_uscc.mo_coeff = self.las.mo_coeff
+        mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(self.mol, a_idxs_selected, i_idxs_selected)
+        mc_uscc.fcisolver.norb_f = self.mol_conf['ncas']
+        # You can subclass and override to change freezing behavior:
+        mc_uscc.fcisolver.frozen = getattr(self, "FROZEN", None)
+
+        ci0 = cilas2f(self.las.ci, self.mol_conf['ncas'], self.mol_conf['nelecas'])
+        mc_uscc.kernel(ci0=ci0)
+        if not mc_uscc.converged and self.VERBOSE >= 1:
+            print("Warning: LAS-USCC-VQE kernel hasn't converged")
+        return mc_uscc, float(mc_uscc.e_tot)
+
+    # ---------------- NOQI/NOCI helpers ----------------
+    def _get_Sij(self, psi_i, psi_j, h) -> complex:
+        ucj, _ = psi_j.hc_x(psi_j.x, h)[1:3]
+        uci, _ = psi_i.hc_x(psi_i.x, h)[1:3]
+        return uci.ravel().conj().dot(ucj.ravel())
+
+    def _get_Sij_Hij(self, psi_i, psi_j, h) -> Tuple[complex, complex]:
+        ucj, hucj = psi_j.hc_x(psi_j.x, h)[1:3]
+        uci, huci = psi_i.hc_x(psi_i.x, h)[1:3]
+        uci = uci.ravel()
+        return uci.conj().dot(ucj.ravel()), uci.conj().dot(hucj.ravel())
+
+    def _psi_selection(self, trial_psi, h) -> List[int]:
+        selected_indices: List[int] = []
+        S_inc = np.zeros((0, 0), dtype=np.complex128)
+        for idx, psi in enumerate(trial_psi):
+            n_sel = len(selected_indices)
+            S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
+            if n_sel > 0:
+                S_new[:n_sel, :n_sel] = S_inc
+                for j, jidx in enumerate(selected_indices):
+                    S_new[n_sel, j] = self._get_Sij(psi, trial_psi[jidx], h)
+                    S_new[j, n_sel] = self._get_Sij(trial_psi[jidx], psi, h)
+            S_new[n_sel, n_sel] = self._get_Sij(psi, psi, h)
+            cond = np.linalg.cond(S_new)
+            if cond < self.THRESHOLD_COND:
+                selected_indices.append(idx)
+                S_inc = S_new
+            elif self.VERBOSE >= 4:
+                print(f"Discarding CI {idx} due to linear dependence (cond={cond:.2e})")
+        return selected_indices
+
+    @timeit(label="LAS-USCC-NOQI (generalized eig)")
+    def run_noqi(self, mc_uscc: mcscf.CASCI, a_idxs_selected, i_idxs_selected) -> float:
+        """Build trial PSIs by toggling one amplitude; solve Hc=ESc. Uses LINEARIZE and AMPLITUDE."""
+        assert self.mf is not None and self.las is not None
+
+        h1eff, e_core = mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+        h2eff = mc_uscc.get_h2eff()
+        h = [e_core, h1eff, h2eff]
+
+        nc = len(a_idxs_selected) + 1
+
+        # Build a fresh FCISolver context to generate psi objects
+        mc_tmp = mcscf.CASCI(self.mf, sum(self.mol_conf['ncas']), sum(self.mol_conf['nelecas']))
+        mc_tmp.mo_coeff = self.las.mo_coeff
+        mc_tmp.fcisolver = lasuccsd.FCISolver_USCC(self.mol, a_idxs_selected, i_idxs_selected)
+        mc_tmp.fcisolver.norb_f = self.mol_conf['ncas']
+        mc_tmp.fcisolver.frozen = getattr(self, "FROZEN", None)
+        fci = mc_tmp.fcisolver
+
+        las_ci0_f = cilas2f(self.las.ci, self.mol_conf['ncas'], self.mol_conf['nelecas'])
+        norb = sum(self.mol_conf['ncas'])
+        nelec = sum(self.mol_conf['nelecas'])
+        norb_f = self.mol_conf['ncas']
+
+        psis = []
+        min_ci_eng = +np.inf
+        for i in range(nc):
+            psi = getattr(fci, 'psi', fci.build_psi(las_ci0_f, norb, norb_f, nelec, frozen=getattr(self, "FROZEN", None)))
+            psi.uop.linearize = bool(self.LINEARIZE)
+            if i < nc - 1:
+                psi.x[psi.nconstr + i] = float(self.AMPLITUDE)
+            energy = psi.energy_tot(psi.x, h)
+            min_ci_eng = min(min_ci_eng, float(energy))
+            psis.append(psi)
+
+        if self.VERBOSE >= 2:
+            print(f"NOQI trial states (incl ref): {nc}; min single-state E: {min_ci_eng:.12f}")
+
+        sel = self._psi_selection(psis, h)
+        sel_psis = [psis[i] for i in sel]
+        if self.VERBOSE >= 2:
+            print(f"Selected {len(sel)} / {nc} states after cond filter")
+
+        # Build S/H and solve
+        S = np.zeros((len(sel_psis), len(sel_psis)), dtype=np.complex128)
+        H = np.zeros_like(S)
+        for i in range(len(sel_psis)):
+            for j in range(len(sel_psis)):
+                S[i, j], H[i, j] = self._get_Sij_Hij(sel_psis[i], sel_psis[j], h)
+
+        if self.VERBOSE >= 3:
+            print("Condition number of S:", np.linalg.cond(S))
+        if self.VERBOSE >= 4:
+            print("S:"); print_matrix(S)
+            print("H:"); print_matrix(H)
+
+        eigvals, _ = eigh(H, S)
+        e_noqi = float(np.min(eigvals.real))
+        print(f"LAS-USCC-NOQI energy: {e_noqi:.17f}")
+        return e_noqi
+
+    # ---------------- High-level sweeps ----------------
+    def run_selection_sweep(
+        self,
+        *,
+        label_prefix: str,
+        epsilons: Optional[List[float]] = None,
+        factors: Optional[List[float]] = None
+    ):
+        """
+        Reuse RHF/LASSCF/CASCI (already run) and scan multiple selections.
+        For each selection, run VQE (and NOQI if enabled).
+        """
+        assert self.las is not None and self.casci_ref is not None
+
+        base_energies = self.energies.get("base", {})
+        if not base_energies:
+            # allow different naming, but keep a copy of ref numbers
+            self.energies["base"] = {
+                "RHF": float(self.mf.e_tot),
+                "LASSCF": float(self.las.e_tot),
+                "CASCI": float(self.casci_ref.e_tot),
+            }
+
+        tasks: List[Tuple[str, Dict[str, Optional[float]]]] = []
+        if epsilons:
+            for eps in epsilons:
+                tasks.append((f"{label_prefix}_eps_{eps:g}", dict(epsilon=float(eps), factor=None)))
+        if factors:
+            for f in factors:
+                tasks.append((f"{label_prefix}_pct_{int(100*f)}", dict(epsilon=None, factor=float(f))))
+
+        for label, kw in tasks:
+            a_idxs, i_idxs, meta = self.select_excitations(**kw)
+            self.selection_records[label] = {"a_idxs": a_idxs, "i_idxs": i_idxs, "meta": meta}
+
+            mc_uscc, e_vqe = self.run_vqe(a_idxs, i_idxs)
+            self.energies[label] = {
+                "RHF": self.energies["base"]["RHF"],
+                "LASSCF": self.energies["base"]["LASSCF"],
+                "CASCI": self.energies["base"]["CASCI"],
+                "LAS-USCC-VQE": e_vqe,
+            }
+            if self.run_noqi_after_vqe:
+                e_noqi = self.run_noqi(mc_uscc, a_idxs, i_idxs)
+                self.energies[label]["LAS-USCC-NOQI"] = e_noqi
+
+        return self.energies
+
+# ===============================================================
+# Example subclass: override defaults for a particular campaign
+# ===============================================================
+@dataclass
+class MyNOQIStudy(LASCCTestBase):
+    # Example overrides (you can create many subclasses with different knobs)
+    VERBOSE: int = 4
+    LINEARIZE: bool = True
+    THRESHOLD_COND: float = 8e5
+    AMPLITUDE: float = 1.0
+    run_noqi_after_vqe: bool = True
+    # Optionally: freezing policy
+    FROZEN: Optional[str] = "CI"   # set to None or "CI"
+
+# ===============================================================
+# Minimal runnable example (replace xyz with your file content)
+# ===============================================================
+if __name__ == "__main__":
+    # CLI override for amplitude preserved
+    if len(sys.argv) > 1:
+        try:
+            AMPL = float(sys.argv[1])
+            print(f"Using AMPLITUDE argument: {AMPL}")
+        except ValueError:
+            AMPL = 1.0
+            print("Invalid AMPLITUDE argument; using default 1.0")
+    else:
+        AMPL = 1.0
+    data_dir = '../geom'
+    # Example H4 (replace by reading your geom files)
+    with open(data_dir + '/h4.xyz', 'r', encoding='utf-8') as f:
+        h4xyz = f.read()
+    
+    h4_sto3g: MolConfig = {
+        'name': 'H4_STO3G',
+        'xyz': h4xyz,
+        'basis': 'sto-3g',
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spinsub': [1, 1],
+        'frag_atom_list': ((0,1),(2,3)),
+        'output': 'h4_sto3g.out',
+        'symmetry': None, 'charge': None, 'spin': None, 'HF': None,
+    }
+
+    job = MyNOQIStudy(h4_sto3g, AMPLITUDE=AMPL)
+    # Run SCF->LASSCF->CASCI ONCE
+    job.run_scf_stack_once(label="base")
+
+    # Sweep multiple selections without re-running LAS/CAS
+    # Example: two epsilons and two percentile factors
+    results = job.run_selection_sweep(
+        label_prefix="scan",
+        epsilons=[0.01, 0.001],
+        factors=[0.05, 0.10],
+    )
+
+    print("\n=== Summary energies ===")
+    for label, rec in results.items():
+        print(f"[{label}]")
+        for k, v in rec.items():
+            print(f"  {k:>16s}: {v:.12f}")
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='midway3-0562.rcc.local', release='4.18.0-305.3.1.el8.x86_64', version='#1 SMP Tue Jun 1 16:14:33 UTC 2021', machine='x86_64')  Threads 1
+Python 3.9.19 | packaged by conda-forge | (main, Mar 20 2024, 12:50:21) 
+[GCC 12.3.0]
+numpy 2.0.2  scipy 1.13.1  h5py 3.14.0
+Date: Wed Nov 12 18:12:56 2025
+PySCF version 2.10.0
+PySCF path  /project/lgagliardi/tuy/qchem/.venv/lib/python3.9/site-packages/pyscf
+mrh path  /project/lgagliardi/tuy/qchem/mrh
+GIT HEAD (branch master) be911c8ae3c12e66ecff0b83733a890cec0899cf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 4
+[INPUT] num. electrons = 4
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT] Symbol           X                Y                Z      unit          X                Y                Z       unit  Magmom
+[INPUT]  1 H      0.000000000000   0.000000000000   0.000000000000 AA    0.000000000000   0.000000000000   0.000000000000 Bohr   0.0
+[INPUT]  2 H      1.000000000000   0.000000000000   0.000000000000 AA    1.889726124565   0.000000000000   0.000000000000 Bohr   0.0
+[INPUT]  3 H      0.273746762116   2.195450598147   0.100000000000 AA    0.517306407886   4.148800350510   0.188972612457 Bohr   0.0
+[INPUT]  4 H      1.232912762116   1.895450598147  -0.100000000000 AA    2.329867455880   3.581882513141  -0.188972612457 Bohr   0.0
+
+nuclear repulsion = 2.023684011863
+number of shells = 4
+number of NR pGTOs = 12
+number of NR cGTOs = 4
+basis = sto-3g
+ecp = {}
+CPU time:         3.67
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+diis_damp = 0
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /scratch/local/jobs/40713076/tmpnxdqs9fk
+max_memory 4000 MB (current use 104 MB)
+Set gradient conv threshold to 3.16228e-05
+Initial guess from minao.
+init E= -1.40744620100893
+  HOMO = -0.314464427824686  LUMO = 0.288293020083207
+cycle= 1 E= -2.10962276943247  delta_E= -0.702  |g|= 0.0119  |ddm|= 1.33
+  HOMO = -0.425229916982649  LUMO = 0.398613236269489
+cycle= 2 E= -2.10971502625417  delta_E= -9.23e-05  |g|= 0.00292  |ddm|= 0.0224
+  HOMO = -0.42530526635152  LUMO = 0.398844883602508
+cycle= 3 E= -2.10972127462277  delta_E= -6.25e-06  |g|= 0.000303  |ddm|= 0.00625
+  HOMO = -0.425330163808313  LUMO = 0.398840022054193
+cycle= 4 E= -2.10972134123365  delta_E= -6.66e-08  |g|= 3.83e-06  |ddm|= 0.000741
+  HOMO = -0.425329700493885  LUMO = 0.398839876342736
+cycle= 5 E= -2.10972134124433  delta_E= -1.07e-11  |g|= 6.45e-08  |ddm|= 9.22e-06
+  HOMO = -0.425329801658021  LUMO = 0.39883993147477
+Extra cycle  E= -2.10972134124433  delta_E= -3.55e-15  |g|= 9.4e-09  |ddm|= 1.01e-07
+converged SCF energy = -2.10972134124433
+
+******** LASSCF flags ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+Divided into 2 LAS spaces
+LAS 0 : (1e+1e, 2o)
+LAS 1 : (1e+1e, 2o)
+nroots = 1
+max_cycle_macro = 50
+max_cycle_micro = 5
+conv_tol_grad = 0.0001
+max_memory 4000 MB (current use 136 MB)
+fragment 0 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+fragment 1 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6239327807887556), np.float64(-1.6058997326817768)]
+LASCI macro 0 : E = -2.18133051290998 ; |g_int| = 0.0403568085697487 ; |g_ci| = 0.000245435861318982 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.027557440699341 ; |x_ci| = 0.00188872395435357
+LASCI micro 2 : |x_orb| = 0.0285416018265917 ; |x_ci| = 0.000545072968590585
+LASCI micro 3 : |x_orb| = 0.0285482363447306 ; |x_ci| = 0.000437758971181429
+LASCI micro 4 : |x_orb| = 0.0285498252774763 ; |x_ci| = 0.00042378004879484
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6251031589908722), np.float64(-1.6064675917470068)]
+LASCI macro 1 : E = -2.18219244988798 ; |g_int| = 0.0201808284303676 ; |g_ci| = 5.66897889541487e-07 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0140116200362667 ; |x_ci| = 0.000643852607159503
+LASCI micro 2 : |x_orb| = 0.0142520340019695 ; |x_ci| = 0.000236734589975649
+LASCI micro 3 : |x_orb| = 0.0142744002368877 ; |x_ci| = 0.000254186107322008
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252178878574268), np.float64(-1.6062939023903775)]
+LASCI macro 2 : E = -2.18240796578298 ; |g_int| = 0.0100921830987225 ; |g_ci| = 1.49939698248116e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00701084258974438 ; |x_ci| = 0.000320196800601013
+LASCI micro 2 : |x_orb| = 0.00712778907733843 ; |x_ci| = 0.000120018130659636
+LASCI micro 3 : |x_orb| = 0.00713925219882542 ; |x_ci| = 0.000126687842581778
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252282959475324), np.float64(-1.60616012347367)]
+LASCI macro 3 : E = -2.1824618665018 ; |g_int| = 0.00504720043178548 ; |g_ci| = 7.83566763068223e-07 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00350784212942613 ; |x_ci| = 0.000159186209088939
+LASCI micro 2 : |x_orb| = 0.00356540538655059 ; |x_ci| = 5.98603124935447e-05
+LASCI micro 3 : |x_orb| = 0.00357110505299771 ; |x_ci| = 6.31184219958267e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.625221773527367), np.float64(-1.60608131038373)]
+LASCI macro 4 : E = -2.18247534895077 ; |g_int| = 0.0025241429412429 ; |g_ci| = 3.94461964253212e-07 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00175480900517363 ; |x_ci| = 7.94273478825288e-05
+LASCI micro 2 : |x_orb| = 0.00178342402671939 ; |x_ci| = 2.98952823891916e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252160980159203), np.float64(-1.6060402260151931)]
+LASCI macro 5 : E = -2.18247871759886 ; |g_int| = 0.00126441824702257 ; |g_ci| = 3.56773869070063e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.000879653302241263 ; |x_ci| = 4.0226032823342e-05
+LASCI micro 2 : |x_orb| = 0.000893500940024613 ; |x_ci| = 1.60286184536052e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252116624940505), np.float64(-1.6060173662829869)]
+LASCI macro 6 : E = -2.18247956293601 ; |g_int| = 0.000633336354880995 ; |g_ci| = 1.68858248981177e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.000439540919076538 ; |x_ci| = 2.21307588690261e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252098722386217), np.float64(-1.6060065430582044)]
+LASCI macro 7 : E = -2.1824797724709 ; |g_int| = 0.00032292731222918 ; |g_ci| = 1.78773911842354e-06 ; |g_x| = 0
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252092204963118), np.float64(-1.6060013509984166)]
+LASCI macro 8 : E = -2.18247981745397 ; |g_int| = 0.000201402072756826 ; |g_ci| = 3.56482048424507e-07 ; |g_x| = 0
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.6252088523810293), np.float64(-1.6059985421179193)]
+LASCI macro 9 : E = -2.18247983494992 ; |g_int| = 0.000125612929956235 ; |g_ci| = 1.72438148010122e-07 ; |g_x| = 0
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace CI energies: [np.float64(-1.62520853465621), np.float64(-1.6059967917464357)]
+LASCI macro 10 : E = -2.18247984175523 ; |g_int| = 7.8341886378995e-05 ; |g_ci| = 8.8286491192175e-08 ; |g_x| = 0
+LASCI converged after 11 cycles
+LASCI E = -2.18247984175523 ; |g_int| = 7.8341886378995e-05 ; |g_ci| = 8.8286491192175e-08 ; |g_ext| = 0
+Fragment 0 natural orbitals
+Natural occ [1.93789483 0.06210517]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2       
+0 H 1s          -0.58081  -0.99622
+1 H 1s          -0.58130   1.00167
+2 H 1s           0.04397   0.01710
+3 H 1s           0.02575  -0.05850
+Fragment 1 natural orbitals
+Natural occ [1.93263707 0.06736293]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2       
+0 H 1s           0.04424   0.00911
+1 H 1s           0.02974  -0.06088
+2 H 1s          -0.58434  -0.98161
+3 H 1s          -0.58385   0.98841
+LASCI energy = -2.18247984175523
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 147 MB)
+******** <class 'pyscf.fci.direct_spin1.FCISolver'> ********
+max. cycles = 200
+conv_tol = 1e-08
+davidson only = False
+linear dependence = 1e-12
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+Density matrix diagonal elements [1.93651834 0.06348416 1.9312664  0.0687311 ]
+CASCI converged
+CASCI E = -2.18344705489128  E(CI) = -4.20713106675428  S^2 = 0.0000000
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 148 MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 13 degrees of freedom
+iteration 0, E = -2.183422, |x| = 2.634475e-02, |g| = 3.288425e-03
+iteration 1, E = -2.183425, |x| = 2.670933e-02, |g| = 2.477787e-03
+iteration 2, E = -2.183426, |x| = 2.662753e-02, |g| = 1.111270e-03
+iteration 3, E = -2.183426, |x| = 2.655521e-02, |g| = 2.300444e-04
+iteration 4, E = -2.183426, |x| = 2.658034e-02, |g| = 7.655431e-05
+iteration 5, E = -2.183426, |x| = 2.658042e-02, |g| = 2.146140e-05
+iteration 6, E = -2.183426, |x| = 2.657802e-02, |g| = 8.895295e-06
+iteration 7, E = -2.183426, |x| = 2.657820e-02, |g| = 6.452616e-06
+iteration 8, E = -2.183426, |x| = 2.657845e-02, |g| = 9.496077e-07
+Fragment 0 local quantum numbers
+<N>,<Sz>,<S^2> = 2.000002, 0.000000, 0.000258
+Fragment 1 local quantum numbers
+<N>,<Sz>,<S^2> = 1.999998, -0.000000, 0.000258
+Whole system quantum numbers
+<N>,<Sz>,<S^2> = 4.000000, 0.000000, 0.000016
+Density matrix diagonal elements [1.93722909 0.06277275 1.93198185 0.06801631]
+CASCI converged
+CASCI E = -2.18342595282445  E(CI) = -4.20710996468745  S^2 = 0.0000160
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 149 MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 38 degrees of freedom
+iteration 0, E = -2.183424, |x| = 2.560054e-02, |g| = 3.770705e-03
+iteration 1, E = -2.183427, |x| = 2.573062e-02, |g| = 2.130578e-03
+iteration 2, E = -2.183428, |x| = 2.582091e-02, |g| = 5.646588e-04
+iteration 3, E = -2.183428, |x| = 2.582969e-02, |g| = 8.669090e-05
+iteration 4, E = -2.183428, |x| = 2.583109e-02, |g| = 1.012525e-04
+iteration 5, E = -2.183428, |x| = 2.585449e-02, |g| = 2.316168e-04
+iteration 6, E = -2.183428, |x| = 2.724254e-02, |g| = 9.789255e-04
+iteration 7, E = -2.183429, |x| = 3.471040e-02, |g| = 1.788598e-03
+iteration 8, E = -2.183430, |x| = 5.579562e-02, |g| = 2.732762e-03
+iteration 9, E = -2.183432, |x| = 9.848637e-02, |g| = 3.680920e-03
+iteration 10, E = -2.183433, |x| = 1.201402e-01, |g| = 2.977054e-03
+iteration 11, E = -2.183435, |x| = 1.281228e-01, |g| = 9.084435e-04
+iteration 12, E = -2.183435, |x| = 1.290014e-01, |g| = 2.726247e-04
+iteration 13, E = -2.183435, |x| = 1.271978e-01, |g| = 2.556133e-04
+iteration 14, E = -2.183435, |x| = 1.266741e-01, |g| = 1.022930e-04
+iteration 15, E = -2.183435, |x| = 1.268232e-01, |g| = 5.809108e-05
+iteration 16, E = -2.183435, |x| = 1.268148e-01, |g| = 1.293854e-04
+iteration 17, E = -2.183435, |x| = 1.267909e-01, |g| = 1.890835e-04
+iteration 18, E = -2.183435, |x| = 1.269984e-01, |g| = 2.597440e-04
+iteration 19, E = -2.183435, |x| = 1.287695e-01, |g| = 6.996764e-04
+iteration 20, E = -2.183435, |x| = 1.332696e-01, |g| = 1.207112e-03
+iteration 21, E = -2.183436, |x| = 1.412191e-01, |g| = 1.648719e-03
+iteration 22, E = -2.183436, |x| = 1.529486e-01, |g| = 1.728909e-03
+iteration 23, E = -2.183436, |x| = 1.548894e-01, |g| = 1.043976e-03
+iteration 24, E = -2.183437, |x| = 1.535877e-01, |g| = 2.481721e-04
+iteration 25, E = -2.183437, |x| = 1.563785e-01, |g| = 1.816574e-04
+iteration 26, E = -2.183437, |x| = 1.560367e-01, |g| = 6.218239e-05
+iteration 27, E = -2.183437, |x| = 1.552434e-01, |g| = 6.175028e-05
+iteration 28, E = -2.183437, |x| = 1.548049e-01, |g| = 8.364790e-05
+iteration 29, E = -2.183437, |x| = 1.543495e-01, |g| = 1.182806e-04
+iteration 30, E = -2.183437, |x| = 1.537416e-01, |g| = 1.623062e-04
+iteration 31, E = -2.183437, |x| = 1.532571e-01, |g| = 2.277162e-04
+iteration 32, E = -2.183437, |x| = 1.526009e-01, |g| = 2.880178e-04
+iteration 33, E = -2.183437, |x| = 1.531888e-01, |g| = 3.042872e-04
+iteration 34, E = -2.183437, |x| = 1.535880e-01, |g| = 2.045221e-04
+iteration 35, E = -2.183437, |x| = 1.542293e-01, |g| = 8.601034e-05
+iteration 36, E = -2.183437, |x| = 1.557508e-01, |g| = 3.342314e-05
+iteration 37, E = -2.183437, |x| = 1.558750e-01, |g| = 2.508094e-05
+iteration 38, E = -2.183437, |x| = 1.559375e-01, |g| = 3.829363e-05
+iteration 39, E = -2.183437, |x| = 1.560026e-01, |g| = 6.195907e-05
+iteration 40, E = -2.183437, |x| = 1.560588e-01, |g| = 9.464597e-05
+iteration 41, E = -2.183437, |x| = 1.560969e-01, |g| = 1.404799e-04
+iteration 42, E = -2.183437, |x| = 1.560936e-01, |g| = 2.052677e-04
+iteration 43, E = -2.183437, |x| = 1.559706e-01, |g| = 2.977157e-04
+iteration 44, E = -2.183437, |x| = 1.556046e-01, |g| = 4.187865e-04
+iteration 45, E = -2.183437, |x| = 1.547455e-01, |g| = 5.273824e-04
+iteration 46, E = -2.183437, |x| = 1.539267e-01, |g| = 4.591720e-04
+iteration 47, E = -2.183437, |x| = 1.525508e-01, |g| = 1.744320e-04
+iteration 48, E = -2.183437, |x| = 1.522458e-01, |g| = 3.638025e-05
+iteration 49, E = -2.183437, |x| = 1.522516e-01, |g| = 1.231079e-05
+iteration 50, E = -2.183437, |x| = 1.522770e-01, |g| = 7.236220e-06
+iteration 51, E = -2.183437, |x| = 1.523011e-01, |g| = 9.786669e-06
+iteration 52, E = -2.183437, |x| = 1.523280e-01, |g| = 1.638252e-05
+iteration 53, E = -2.183437, |x| = 1.523636e-01, |g| = 2.546998e-05
+iteration 54, E = -2.183437, |x| = 1.524166e-01, |g| = 3.785129e-05
+iteration 55, E = -2.183437, |x| = 1.525022e-01, |g| = 5.585518e-05
+iteration 56, E = -2.183437, |x| = 1.526474e-01, |g| = 8.259356e-05
+iteration 57, E = -2.183437, |x| = 1.529031e-01, |g| = 1.229757e-04
+iteration 58, E = -2.183437, |x| = 1.533668e-01, |g| = 1.827524e-04
+iteration 59, E = -2.183437, |x| = 1.542167e-01, |g| = 2.650547e-04
+iteration 60, E = -2.183437, |x| = 1.556760e-01, |g| = 3.544380e-04
+iteration 61, E = -2.183437, |x| = 1.574450e-01, |g| = 3.969891e-04
+iteration 62, E = -2.183437, |x| = 1.596402e-01, |g| = 3.717981e-04
+iteration 63, E = -2.183437, |x| = 1.621970e-01, |g| = 2.517117e-04
+iteration 64, E = -2.183437, |x| = 1.630651e-01, |g| = 9.170788e-05
+iteration 65, E = -2.183437, |x| = 1.647503e-01, |g| = 8.969981e-05
+iteration 66, E = -2.183437, |x| = 1.655938e-01, |g| = 7.168550e-05
+iteration 67, E = -2.183437, |x| = 1.670632e-01, |g| = 3.427122e-05
+iteration 68, E = -2.183437, |x| = 1.664047e-01, |g| = 3.838680e-05
+iteration 69, E = -2.183437, |x| = 1.667346e-01, |g| = 1.094049e-05
+iteration 70, E = -2.183437, |x| = 1.669183e-01, |g| = 4.097989e-06
+iteration 71, E = -2.183437, |x| = 1.669500e-01, |g| = 4.893521e-06
+iteration 72, E = -2.183437, |x| = 1.669796e-01, |g| = 6.220520e-06
+iteration 73, E = -2.183437, |x| = 1.670180e-01, |g| = 8.274456e-06
+iteration 74, E = -2.183437, |x| = 1.670768e-01, |g| = 1.158680e-05
+iteration 75, E = -2.183437, |x| = 1.671735e-01, |g| = 1.692199e-05
+iteration 76, E = -2.183437, |x| = 1.673397e-01, |g| = 2.542697e-05
+iteration 77, E = -2.183437, |x| = 1.676328e-01, |g| = 3.873311e-05
+iteration 78, E = -2.183437, |x| = 1.681514e-01, |g| = 5.858200e-05
+iteration 79, E = -2.183437, |x| = 1.690332e-01, |g| = 8.493565e-05
+iteration 80, E = -2.183437, |x| = 1.704190e-01, |g| = 1.132558e-04
+iteration 81, E = -2.183437, |x| = 1.725721e-01, |g| = 1.381791e-04
+iteration 82, E = -2.183437, |x| = 1.761373e-01, |g| = 1.566473e-04
+iteration 83, E = -2.183437, |x| = 1.823487e-01, |g| = 1.615310e-04
+iteration 84, E = -2.183437, |x| = 1.923536e-01, |g| = 1.309853e-04
+iteration 85, E = -2.183437, |x| = 1.977801e-01, |g| = 7.963387e-05
+iteration 86, E = -2.183437, |x| = 2.037117e-01, |g| = 2.075438e-05
+iteration 87, E = -2.183437, |x| = 2.028895e-01, |g| = 1.286839e-04
+iteration 88, E = -2.183437, |x| = 1.998257e-01, |g| = 1.147353e-04
+iteration 89, E = -2.183437, |x| = 1.934810e-01, |g| = 3.139587e-05
+iteration 90, E = -2.183437, |x| = 1.933764e-01, |g| = 4.217090e-05
+iteration 91, E = -2.183437, |x| = 1.930782e-01, |g| = 4.797722e-05
+iteration 92, E = -2.183437, |x| = 1.924233e-01, |g| = 4.038099e-05
+iteration 93, E = -2.183437, |x| = 1.922972e-01, |g| = 2.146924e-05
+iteration 94, E = -2.183437, |x| = 1.907838e-01, |g| = 2.173711e-05
+iteration 95, E = -2.183437, |x| = 1.902353e-01, |g| = 4.597199e-05
+iteration 96, E = -2.183437, |x| = 1.891951e-01, |g| = 3.301136e-05
+iteration 97, E = -2.183437, |x| = 1.877017e-01, |g| = 2.155950e-05
+iteration 98, E = -2.183437, |x| = 1.868456e-01, |g| = 2.863896e-05
+iteration 99, E = -2.183437, |x| = 1.858017e-01, |g| = 3.168994e-05
+iteration 100, E = -2.183437, |x| = 1.851031e-01, |g| = 5.134945e-05
+iteration 101, E = -2.183437, |x| = 1.853189e-01, |g| = 5.298533e-05
+iteration 102, E = -2.183438, |x| = 1.861081e-01, |g| = 6.489326e-05
+iteration 103, E = -2.183438, |x| = 1.878103e-01, |g| = 7.973555e-05
+iteration 104, E = -2.183438, |x| = 1.922096e-01, |g| = 9.576690e-05
+iteration 105, E = -2.183438, |x| = 1.943058e-01, |g| = 1.367482e-04
+iteration 106, E = -2.183438, |x| = 1.974697e-01, |g| = 8.060460e-05
+iteration 107, E = -2.183438, |x| = 2.021596e-01, |g| = 8.179628e-05
+iteration 108, E = -2.183438, |x| = 2.022499e-01, |g| = 1.006604e-04
+iteration 109, E = -2.183438, |x| = 2.032741e-01, |g| = 8.534978e-05
+iteration 110, E = -2.183438, |x| = 2.054798e-01, |g| = 6.294949e-05
+iteration 111, E = -2.183438, |x| = 2.090067e-01, |g| = 4.790751e-05
+iteration 112, E = -2.183438, |x| = 2.093243e-01, |g| = 2.775422e-05
+iteration 113, E = -2.183438, |x| = 2.101892e-01, |g| = 9.159203e-06
+iteration 114, E = -2.183438, |x| = 2.103711e-01, |g| = 1.888141e-06
+iteration 115, E = -2.183438, |x| = 2.104752e-01, |g| = 9.182147e-07
+Fragment 0 local quantum numbers
+<N>,<Sz>,<S^2> = 2.000001, -0.000000, 0.000276
+Fragment 1 local quantum numbers
+<N>,<Sz>,<S^2> = 1.999999, 0.000000, 0.000276
+Whole system quantum numbers
+<N>,<Sz>,<S^2> = 4.000000, -0.000000, 0.000000
+Density matrix diagonal elements [1.93653779 0.06346367 1.93128938 0.06870917]
+CASCI converged
+CASCI E = -2.18343756527332  E(CI) = -4.20712157713631  S^2 = 0.0000000
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 150 MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 7 degrees of freedom
+iteration 0, E = -2.183107, |x| = 2.210942e-02, |g| = 5.333435e-03
+iteration 1, E = -2.183115, |x| = 2.253714e-02, |g| = 8.749684e-05
+iteration 2, E = -2.183115, |x| = 2.253822e-02, |g| = 2.961054e-06
+iteration 3, E = -2.183115, |x| = 2.253939e-02, |g| = 8.515805e-08
+Fragment 0 local quantum numbers
+<N>,<Sz>,<S^2> = 2.000008, 0.000000, 0.000324
+Fragment 1 local quantum numbers
+<N>,<Sz>,<S^2> = 1.999992, -0.000000, 0.000324
+Whole system quantum numbers
+<N>,<Sz>,<S^2> = 4.000000, 0.000000, 0.000328
+Density matrix diagonal elements [1.9374198  0.06258774 1.93216204 0.06783042]
+CASCI converged
+CASCI E = -2.18311453542661  E(CI) = -4.20679854728960  S^2 = 0.0003278
+
+******** <class 'pyscf.mcscf.casci.CASCI'> ********
+CAS (2e+2e, 4o), ncore = 0, nvir = 0
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 MB (current use 150 MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 14 degrees of freedom
+iteration 0, E = -2.183422, |x| = 2.629706e-02, |g| = 3.280035e-03
+iteration 1, E = -2.183425, |x| = 2.666001e-02, |g| = 2.496035e-03
+iteration 2, E = -2.183426, |x| = 2.658017e-02, |g| = 1.143844e-03
+iteration 3, E = -2.183426, |x| = 2.650600e-02, |g| = 2.625381e-04
+iteration 4, E = -2.183426, |x| = 2.653112e-02, |g| = 1.549198e-04
+iteration 5, E = -2.183426, |x| = 2.653532e-02, |g| = 1.062896e-04
+iteration 6, E = -2.183426, |x| = 2.653100e-02, |g| = 3.428403e-05
+iteration 7, E = -2.183426, |x| = 2.652960e-02, |g| = 1.214698e-05
+iteration 8, E = -2.183426, |x| = 2.652962e-02, |g| = 8.592313e-06
+iteration 9, E = -2.183426, |x| = 2.652967e-02, |g| = 1.286489e-06
+Fragment 0 local quantum numbers
+<N>,<Sz>,<S^2> = 2.000002, -0.000000, 0.000258
+Fragment 1 local quantum numbers
+<N>,<Sz>,<S^2> = 1.999998, 0.000000, 0.000258
+Whole system quantum numbers
+<N>,<Sz>,<S^2> = 4.000000, 0.000000, 0.000016
+Density matrix diagonal elements [1.93722909 0.06277276 1.93198202 0.06801614]
+CASCI converged
+CASCI E = -2.18342595238963  E(CI) = -4.20710996425263  S^2 = 0.0000160

@@ -1,0 +1,161 @@
+	Command being timed: "python h4.py -0.01"
+	User time (seconds): 3428.98
+	System time (seconds): 67.87
+	Percent of CPU this job got: 2176%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:40.63
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 180044
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 73520
+	Voluntary context switches: 190061
+	Involuntary context switches: 21715547
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 224
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -0.05"
+	User time (seconds): 3421.78
+	System time (seconds): 68.79
+	Percent of CPU this job got: 2210%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:37.92
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 178648
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 65027
+	Voluntary context switches: 184143
+	Involuntary context switches: 22442013
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 232
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -0.1"
+	User time (seconds): 3429.63
+	System time (seconds): 69.97
+	Percent of CPU this job got: 2229%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:36.98
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 176312
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 67744
+	Voluntary context switches: 183988
+	Involuntary context switches: 21218262
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 160
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -0.25"
+	User time (seconds): 3367.18
+	System time (seconds): 68.35
+	Percent of CPU this job got: 2224%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:34.43
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 166868
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 67705
+	Voluntary context switches: 180729
+	Involuntary context switches: 20833224
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 304
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -0.5"
+	User time (seconds): 3268.93
+	System time (seconds): 66.13
+	Percent of CPU this job got: 2219%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:30.27
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 166204
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 64837
+	Voluntary context switches: 178535
+	Involuntary context switches: 20887076
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 160
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -1.0"
+	User time (seconds): 3439.89
+	System time (seconds): 70.19
+	Percent of CPU this job got: 2233%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:37.15
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 171904
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 67565
+	Voluntary context switches: 181382
+	Involuntary context switches: 20812193
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 160
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python h4.py -2.0"
+	User time (seconds): 3206.01
+	System time (seconds): 64.48
+	Percent of CPU this job got: 2225%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:26.94
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 167900
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 65265
+	Voluntary context switches: 173505
+	Involuntary context switches: 21083241
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 224
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

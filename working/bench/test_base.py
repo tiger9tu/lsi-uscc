@@ -361,7 +361,7 @@ if __name__ == "__main__":
             print("Invalid AMPLITUDE argument; using default 1.0")
     else:
         AMPL = 1.0
-
+    data_dir = '../geom'
     # Example H4 (replace by reading your geom files)
     with open(data_dir + '/h4.xyz', 'r', encoding='utf-8') as f:
         h4xyz = f.read()

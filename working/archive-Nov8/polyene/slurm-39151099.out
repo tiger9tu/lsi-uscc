@@ -1,0 +1,205 @@
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 621, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 321, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 280, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 136, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'psi' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.01"
+	User time (seconds): 672.89
+	System time (seconds): 8.94
+	Percent of CPU this job got: 2086%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:32.68
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 319260
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 92829
+	Voluntary context switches: 54036
+	Involuntary context switches: 4947968
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1016
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 621, in <module>
+    mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 321, in batch_test
+    result = test(mol_config, test_config, las, mol, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 280, in test
+    result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, g_sel, test_config, mol_config, mol,las, mc_uscc, mf)
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 136, in nci_test
+    psi.x[psi.nconstr + i] = sign * amplitude # not sure about the + - of the sign, try both
+UnboundLocalError: local variable 'psi' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.05"
+	User time (seconds): 643.99
+	System time (seconds): 8.79
+	Percent of CPU this job got: 2101%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.06
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 273600
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 99654
+	Voluntary context switches: 50615
+	Involuntary context switches: 5761015
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 840
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 621, in <module>
+    print(f"Molecule {mol_conf['name']}: ")
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 321, in batch_test
+    
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 280, in test
+    if test_config['noci_test']:
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 136, in nci_test
+    
+UnboundLocalError: local variable 'psi' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.1"
+	User time (seconds): 659.77
+	System time (seconds): 9.36
+	Percent of CPU this job got: 2128%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:31.44
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 277108
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 96256
+	Voluntary context switches: 52959
+	Involuntary context switches: 6609929
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 984
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+Traceback (most recent call last):
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 622, in <module>
+    print(f"LASSCF energy: {las_energy:.17f}")
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 322, in batch_test
+    return results, ref.e_tot, las.e_tot
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 281, in test
+    
+  File "/project/lgagliardi/tuy/qchem/las-uscc-noci/working/polyene/c4_631g_gradsign.py", line 137, in nci_test
+    mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+UnboundLocalError: local variable 'psi' referenced before assignment
+Command exited with non-zero status 1
+	Command being timed: "python c4_631g_gradsign.py -0.25"
+	User time (seconds): 643.90
+	System time (seconds): 9.28
+	Percent of CPU this job got: 2121%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:30.78
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 276604
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 95346
+	Voluntary context switches: 51685
+	Involuntary context switches: 6915551
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1008
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1
+	Command being timed: "python c4_631g_gradsign.py -0.5"
+	User time (seconds): 382868.77
+	System time (seconds): 5216.93
+	Percent of CPU this job got: 2178%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:56:53
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 319248
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 677887
+	Voluntary context switches: 29144454
+	Involuntary context switches: 2294100736
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1016
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python c4_631g_gradsign.py -1.0"
+	User time (seconds): 14200.79
+	System time (seconds): 196.58
+	Percent of CPU this job got: 2235%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:44.08
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 203284
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 188404
+	Voluntary context switches: 1148063
+	Involuntary context switches: 122631386
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 568
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+	Command being timed: "python c4_631g_gradsign.py -2.0"
+	User time (seconds): 14259.22
+	System time (seconds): 197.62
+	Percent of CPU this job got: 2239%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:45.51
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 200176
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 222630
+	Voluntary context switches: 1162067
+	Involuntary context switches: 132269091
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 568
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

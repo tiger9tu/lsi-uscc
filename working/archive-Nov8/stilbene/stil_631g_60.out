@@ -1,0 +1,1445 @@
+#INFO: **** input file is /project/lgagliardi/tuy/qchem/las-uscc-noci/working/stilbene/stil-60.py ****
+# test the distribution of the nearest neighbor excitations
+
+import numpy as np
+import pyscf
+from pyscf import gto, scf, lib, mcscf
+from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
+from mrh.exploratory.unitary_cc import lasuccsd
+from mrh.exploratory.unitary_cc.uccsd_sym0 import get_uccsd_op
+from mrh.exploratory.citools import grad, lasci_ominus1
+from mrh.exploratory.citools import fockspace
+
+
+from typing import Iterable, Union
+from typing import Dict, List, Any, TypedDict
+import copy
+import pickle
+from enum import Enum
+from scipy.linalg import eigh
+from scipy import optimize
+import sys
+
+VERBOSE = 0
+if len(sys.argv) > 1:
+    try:
+        AMPLITUDE = float(sys.argv[1])
+        print(f"Using AMPLITUDE argument: {AMPLITUDE}")
+    except ValueError:
+        print("Invalid AMPLITUDE argument, using default value 1.")
+        AMPLITUDE = 1
+else:
+    AMPLITUDE = 1
+
+def flatten(seq: Iterable) -> list:
+    result = []
+    for item in seq:
+        if isinstance(item, (list, tuple, np.ndarray)):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+    return result
+
+
+def cilas2f(lasci, norb_f, nelec_f):
+    ''' nelec (na, nb)'''
+    ci_f = []
+    for i, ci in enumerate(lasci):
+        ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
+    return ci_f
+
+class MolConfig(TypedDict):
+    # basic
+    name : str
+    xyz: str
+    basis: str
+    ncas: List[int]
+    nelecas: List[int]
+    spinsub: List[int]
+    frag_atom_list: Any  # Can be List or Tuple depending on usage
+    frag_spin_orb: Any
+    adj: List[List[int]]
+
+class TestConfig(TypedDict):
+    epsilon: float
+    # nearest neighbor parameters
+    nn: bool
+    # non-orthogonal configuration interaction parameters
+    init_method: str # 'random' or 'uscc_opt' or 'load x'
+    # max_nx: int  # max number of excitations per configuration
+    # min_nc: int
+    # test choices
+    grad_test: bool
+    noci_test: bool  
+    frozen: str
+
+def get_Sij(psi_i, psi_j, h):
+    """Compute the overlap Sij = <psi_i|psi_j>."""
+    ucj, _ = psi_j.hc_x(psi_j.x, h)[1:3]
+    uci, _ = psi_i.hc_x(psi_i.x, h)[1:3]
+    ucj, uci = ucj.ravel(), uci.ravel()
+    Sij = uci.conj().dot(ucj)
+    return Sij
+
+
+def get_Sij_Hij(psi_i, psi_j, h):
+    ucj, hucj = psi_j.hc_x (psi_j.x, h)[1:3]
+    uci, huci = psi_i.hc_x (psi_i.x, h)[1:3]
+    ucj, hucj = ucj.ravel (), hucj.ravel ()
+    uci = uci.ravel ()
+    Sij = uci.conj ().dot (ucj)
+    Hij = uci.conj ().dot (hucj)
+    return Sij, Hij
+
+
+def arr_split(arr, n):
+    """Split an array into n nearly equal parts."""
+    k, m = divmod(len(arr), n)
+    return list(arr[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
+def print_matrix(mat):
+    for row in mat:
+        print("  ".join(f"{x:.17f}" for x in row))
+
+def zip_excitations(a_idxs, i_idxs):
+    excitations = []
+    for a, i in zip(a_idxs, i_idxs):
+        excitations.append((tuple(i), tuple(a[::-1])))
+    return excitations
+
+def print_excitations(a_idxs, i_idxs):
+    excitations = zip_excitations(a_idxs, i_idxs)
+    for excitation in excitations:
+        print([[int(x) for x in flatten(excitation)]])
+
+
+def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf):
+
+    nc = len(a_idxs_selected) + 1
+    # we create ci for each excitation
+    if VERBOSE >= 1:
+        print("Number of CIs: ", nc)
+
+    h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+    h2eff = mc_uscc.get_h2eff()
+
+    las_ucc_trial_cis = []
+    
+    min_ci_eng = 99999.9
+    for i in range(nc):
+        if( i == nc -1):
+            amplitude = 0 # the last one is the reference state
+        else:
+            amplitude = AMPLITUDE # we should try different amplitudes
+
+        mc_uscc_ci = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+        mc_uscc_ci.mo_coeff = las.mo_coeff
+        mc_uscc_ci.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+        mc_uscc_ci.fcisolver.norb_f = mol_config['ncas']
+        fci = mc_uscc_ci.fcisolver
+        las_ci0_f = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas'])
+
+        norb = sum(mol_config['ncas']) # not sure about this
+        nelec = sum(mol_config['nelecas']) # not sure about this
+        norb_f = getattr (fci, 'norb_f', [norb])
+        psi =  getattr (fci, 'psi', fci.build_psi (las_ci0_f, norb, norb_f, nelec, frozen=test_config['frozen']))
+        
+        if i < nc - 1:
+            psi.x[psi.nconstr + i] = amplitude
+
+        energy = psi.energy_tot(psi.x, [e_core, h1eff, h2eff])
+        if energy < min_ci_eng:
+            min_ci_eng = energy
+
+        las_ucc_trial_cis.append(psi)
+        
+    
+    S = np.zeros((nc, nc), dtype=np.complex128)
+    H = np.zeros((nc, nc), dtype=np.complex128)
+    h = [e_core, h1eff, h2eff]
+
+
+    # Build S matrix incrementally, discarding linearly dependent CIs
+    selected_indices = []
+    S_inc = np.zeros((0, 0), dtype=np.complex128)
+    threshold = 1e5  # You can adjust this threshold as needed
+
+    for idx, psi in enumerate(las_ucc_trial_cis):
+        # Build S matrix for current selection + this CI
+        n_sel = len(selected_indices)
+        S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
+        # Fill previous block
+        if n_sel > 0:
+            S_new[:n_sel, :n_sel] = S_inc
+            for j, jidx in enumerate(selected_indices):
+                S_new[n_sel, j] = get_Sij(psi, las_ucc_trial_cis[jidx], h)
+                S_new[j, n_sel] = get_Sij(las_ucc_trial_cis[jidx], psi, h)
+        # Diagonal element
+        S_new[n_sel, n_sel] = get_Sij(psi, psi, h)
+        # Check condition number
+        cond = np.linalg.cond(S_new)
+        if cond < threshold:
+            selected_indices.append(idx)
+            S_inc = S_new
+        else:
+            if VERBOSE >= 1:
+                print(f"Discarding CI {idx} due to linear dependence (cond={cond:.2e})")
+
+    # Now, only keep selected CIs for S and H
+    nc_sel = len(selected_indices)
+    S = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
+    H = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
+    for i, idx_i in enumerate(selected_indices):
+        for j, idx_j in enumerate(selected_indices):
+            S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[idx_i], las_ucc_trial_cis[idx_j], h)
+
+    if VERBOSE >= 0:
+        print(f"Selected {nc_sel} CIs out of {nc} total CIs")
+        print("Condition number of S matrix: ", np.linalg.cond(S))
+
+    if VERBOSE >= 1:
+        print("S matrix:")
+        print_matrix(S)
+        print("H matrix:")
+        print_matrix(H)
+
+    # print("min_ci_eng: ", min_ci_eng)
+    eigvals, eigvecs = eigh(H, S)
+    return eigvals[0], eigvecs[0], min_ci_eng   # Take the lowest eigenvalue as the energy
+
+
+
+def test(mol_config, test_config,las, mol, mf):
+    result = {}
+
+    all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, test_config['epsilon'])
+
+    # if test_config['grad_test']:
+    #     result['all_g'] = all_g
+    result['all_g'] = all_g
+    result['g_sel'] = g_sel
+
+    a_idxs_selected_nn = []
+    i_idxs_selected_nn = []
+    
+    nn_g = []
+    if(test_config['nn']):
+        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, mol_config)
+        if test_config['grad_test']:
+            result['nn_g'] = nn_g
+
+    result['tot_excitation_count'] = len(a_idxs_selected_all)
+    result['excitation_count_nn'] = len(a_idxs_selected_nn)
+
+    #Computing energy through the LAS-UCC kernel using selected excitations
+    #==========================================================================================
+    
+    a_idxs_selected = None
+    i_idxs_selected = None
+
+    if test_config['nn']:
+        a_idxs_selected = a_idxs_selected_nn
+        i_idxs_selected = i_idxs_selected_nn
+    else:
+        a_idxs_selected = a_idxs_selected_all
+        i_idxs_selected = i_idxs_selected_all
+    
+    if VERBOSE >= 2:
+        print("All selected excitations:")
+        print_excitations(a_idxs_selected, i_idxs_selected)
+
+    mc_uscc = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    mc_uscc.mo_coeff = las.mo_coeff
+    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = mol_config['ncas'] # number of orbitals in each fragment
+    # easily hit the maximal memory limit
+    mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
+    mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
+    if not mc_uscc.converged:
+        print('Warning: kernel hasn\'t converged')
+    
+    if VERBOSE >= 1:
+        print("MC-USCC amplitudes: ", mc_uscc.fcisolver.psi.x)
+
+    result['las_uscc_eng'] =  mc_uscc.e_tot 
+   
+    if test_config['noci_test']:
+        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
+    
+    return result
+   
+
+
+
+def batch_test(mol_config, test_configs):
+    results = []
+
+    # Initializing the molecule with RHF
+    #===================================
+    symmetry = None
+    charge = None
+    spin = None
+    if 'symmetry' in mol_config:
+        symmetry = mol_config['symmetry']
+    if 'charge' in mol_config:
+        charge = mol_config['charge']
+    if 'spin' in mol_config:
+        spin = mol_config['spin']
+
+    mol = gto.M(atom=mol_config['xyz'], basis=mol_config['basis'], symmetry = symmetry,
+        charge = charge, spin = spin, verbose=4, output=mol_config['output'])
+    if 'HF' in mol_config and mol_config['HF'] == 'ROHF':
+        mf = scf.ROHF(mol).run()
+    else:
+        mf = scf.RHF(mol).run()
+
+    # Running LASSCF
+    #===================================
+    las = LASSCF(mf, mol_config['ncas'], mol_config['nelecas'], spin_sub=mol_config['spinsub'], ouput=None)
+    mo_loc = las.localize_init_guess(mol_config['frag_atom_list'], mf.mo_coeff)
+    las.kernel(mo_loc)
+    
+    ref = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
+    ref.mo_coeff = las.mo_coeff
+    ref.kernel() 
+
+    for test_config in test_configs:
+        
+        result = test(mol_config, test_config, las, mol, mf)
+        results.append(result)
+    
+    return results, ref.e_tot, las.e_tot
+
+
+def empty_adj(n):
+    return [[0 for _ in range(n)] for _ in range(n)]
+
+def circle_adj(n):
+    return [[1 if abs(i - j) == 1 or abs(i - j) == n-1 else 0 for j in range(n)] for i in range(n)]
+
+
+if __name__ == "__main__":
+
+
+    data_dir = '../geom'
+
+    with open(data_dir + '/h4.xyz', 'r', encoding='utf-8') as f:
+        h4xyz = f.read()
+
+    with open(data_dir + '/h6.xyz', 'r', encoding='utf-8') as f:
+        h6xyz = f.read()
+
+    with open(data_dir + '/h8.xyz', 'r', encoding='utf-8') as f:
+        h8xyz = f.read()
+
+    with open(data_dir + '/h10.xyz', 'r', encoding='utf-8') as f:
+        h10xyz = f.read()
+
+
+    with open(data_dir + '/c4.xyz', 'r', encoding='utf-8') as f:
+        c4xyz = f.read()
+
+    with open(data_dir + '/c6.xyz', 'r', encoding='utf-8') as f:
+        c6xyz = f.read()
+
+    with open(data_dir + '/c8.xyz', 'r', encoding='utf-8') as f:
+        c8xyz = f.read()
+
+    with open(data_dir + '/c10.xyz', 'r', encoding='utf-8') as f:
+        c10xyz = f.read()
+
+    with open(data_dir + '/stil-001.xyz', 'r', encoding='utf-8') as f:
+        stil001xyz = f.read()
+
+    with open(data_dir + '/stil-60.xyz', 'r', encoding='utf-8') as f:
+        stil60xyz = f.read()
+
+    with open(data_dir + '/stil-90.xyz', 'r', encoding='utf-8') as f:
+        stil90xyz = f.read()
+
+    with open(data_dir + '/stil-120.xyz', 'r', encoding='utf-8') as f:
+        stil120xyz = f.read()
+
+    with open(data_dir + '/stil-180.xyz', 'r', encoding='utf-8') as f:
+        stil180xyz = f.read()       
+
+
+    # with open(data_dir + '/kremer/kremer-geometry.xyz', 'r', encoding='utf-8') as f:
+    #     kremer_xyz = f.read()
+
+    # kremer_basis = {
+    #     "Cr": "def2-tzvp",
+    #     "O": "def2-svp",
+    #     "N": "def2-svp",
+    #     "C": "def2-svp",
+    #     "H": "def2-svp",
+    # }
+
+    # kremer_def2 : MolConfig = {
+    #     'name' : 'kremer_def2',
+    #     'HF' : 'ROHF',
+    #     'xyz' : kremer_xyz,
+    #     'basis' : kremer_basis,
+    #     'symmetry' : False,
+    #     'charge' : 3,
+    #     'spin' : 6,
+    #     'ncas': [3,3],
+    #     'nelecas': [[3,0],[0,3]],
+    #     'spinsub': [4,4],
+    #     'frag_atom_list': [[0],[1]]
+    # }
+
+    h4_sto3g : MolConfig = {
+        'name': 'H4_STO3G',
+        'xyz': h4xyz,
+        'basis': 'sto-3g',
+        'ncas': [2, 2],
+        'nelecas': [2, 2],
+        'spinsub': [1, 1],
+        'frag_atom_list': ((0, 1), (2, 3)),
+        'output': 'h4_sto3g.out',
+    }
+
+
+    stil_631g_001 : MolConfig = {
+        'name': 'STIL_631G_001',
+        'xyz': stil001xyz,
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+        'output' : 'stil_631g_001.out',
+    }
+
+    stil_631g_60 : MolConfig = {
+        'name': 'STIL_631G_60',
+        'xyz': stil60xyz,
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+        'output' : 'stil_631g_60.out',
+    }
+
+    stil_631g_90 : MolConfig = {
+        'name': 'STIL_631G_90',
+        'xyz': stil90xyz,
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+        'output' : 'stil_631g_90.out',
+    }
+
+    stil_631g_120 : MolConfig = {
+        'name': 'STIL_631G_120',
+        'xyz': stil120xyz,
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+        'output' : 'stil_631g_120.out',
+    }
+
+
+    stil_631g_180 : MolConfig = {
+        'name': 'STIL_631G_180',
+        'xyz': stil180xyz,
+        'basis': '631g',
+        'ncas': [4,2,4],
+        'nelecas': [4,2,4],
+        'spinsub': [1, 1, 1],
+        'frag_atom_list': [ [1,2,3,4,5,6,15,16,17,18,19] , [0,7, 14,20] , [8,9,10,11,12,13, 21,22,23,24,25] ],
+        'frag_spin_orb': {
+            0: (0, 1, 2, 3,10,11,12,13),
+            1: (4,5,14,15),
+            2: (6,7,8,9,16,17,18,19)
+        },
+        'adj': empty_adj(3),
+        'output' : 'stil_631g_180.out',
+    }
+
+    # This c4 is too small, and I observed numericall error, that H and S have all identical
+    # entries however the NOCI energy is lower 
+    c4_631g : MolConfig = {
+        'name': 'C4_631G',
+        'xyz': c4xyz,
+        'basis': '631g',
+        'ncas': [2,2],
+        'nelecas': [2,2],
+        'spinsub': [1,1],
+        'frag_atom_list':  [[0,2], [3,1]],
+        'frag_spin_orb': {
+            0: (0,1,4,5),
+            1: (2,3,6,7),
+        },
+        'adj': circle_adj(2), # not sure about this
+        'output': 'c4_631g.out',
+    }
+
+    c6_631 : MolConfig = {
+        'name': 'C6_631G',
+        'xyz': c6xyz,
+        'basis': '631g',
+        'ncas': [2,2,2],
+        'nelecas': [2,2,2],
+        'spinsub': [1,1,1],
+        'frag_atom_list': [[0,2], [10,11], [3,1]], # not sure about this
+        'frag_spin_orb': {
+            0: (0,1,6,7),
+            1: (2,3,8,9),
+            2: (4,5,10,11),
+        },
+        'adj': circle_adj(3),
+        'output': 'c6_631g.out',
+    }
+
+
+    c8_631 : MolConfig = {
+        'name': 'C8_631G',
+        'xyz': c8xyz,
+        'basis': '631g',
+        'ncas': [2,2,2,2],
+        'nelecas': [2,2,2,2],
+        'spinsub': [1,1,1,1],
+        'frag_atom_list': [[0,2], [10,12], [13,11], [3,1]], 
+        'frag_spin_orb': {
+            0: (0,1,8,9),
+            1: (2,3,10,11),
+            2: (4,5,12,13),
+            3: (6,7,14,15),
+        },
+        'adj': circle_adj(3),
+        'output': 'c8_631g.out',
+    }
+
+
+    c10_631g : MolConfig = {
+        'name': 'C10_631G',
+        'xyz': c10xyz,
+        'basis': '631g',
+        'ncas': [2,2,2,2,2],
+        'nelecas': [2,2,2,2,2],
+        'spinsub': [1,1,1,1,1],
+        'frag_atom_list': [[0,2], [10,12], [18,19], [13,11], [3,1]],
+        'frag_spin_orb': {
+            0: (0,1,10,11),
+            1: (2,3,12,13),
+            2: (4,5,14,15),
+            3: (6,7,16,17),
+            4: (8,9,18,19)
+        },
+        'adj': circle_adj(5),
+        'output': 'c10_631g.out',
+    }
+
+    mol_configs = [stil_631g_60]
+    # mol_configs = [h4_sto3g]
+
+
+
+    nosi_test_01 : TestConfig = {
+        'epsilon': 0.01,
+        'nn': False,
+        'init_method': 'uscc_opt',
+        'frozen': 'CI',
+        'grad_test': False,
+        'noci_test': True
+    }
+        
+    # noci_test_001 = copy.deepcopy(noci_test_01)
+    # noci_test_001['epsilon'] = 0.001
+
+    # noci_test_0001 = copy.deepcopy(noci_test_01)
+    # noci_test_0001['epsilon'] = 0.0001
+
+    # eps = np.array([0.00792607, 0.00486175, 0.003190716, 0.00247079])
+    eps =  np.array([0.00792607])
+
+    nosi_tests = []
+    for thre in eps:
+        nosi_test = copy.deepcopy(nosi_test_01)
+        nosi_test['epsilon'] = thre
+        nosi_tests.append(nosi_test)
+
+
+    for mol_conf in mol_configs:
+        print(f"Molecule {mol_conf['name']}: ")
+        mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
+        # mol_results, ref_energy, las_energy = batch_test(mol_conf, [])
+        print(f"CASCI energy: {ref_energy:.17f}")
+        print(f"LASSCF energy: {las_energy:.17f}")
+        for result in mol_results:
+            print(f"Total excitations: {len(result['all_g'])}")
+            print(f"Selected excitations: {len(result['g_sel'])}")
+            
+            # print(f"NN excitations: {result['excitation_count_nn']}")
+
+            if 'las_uscc_eng' in result:
+                print(f"LAS-USCCSD-VQE energy: {result['las_uscc_eng']:.17f}")
+            if 'las_uscc_noci_eng' in result:
+                print(f"LAS-USCCSD-NOSI energy: {result['las_uscc_noci_eng']:.17f}")
+            # if 'tot_g' in result:
+            #     print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
+            # if 'nn_g' in result:
+            #     print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
+            if 'las_uscc_noci_vec' in result:
+                print("NOSI vector: ", result['las_uscc_noci_vec'])
+            if 'min_ci_eng' in result:
+                print(f"Minimum State energy: {result['min_ci_eng']:.17f}")
+            print("\n")
+        
+        print("\n\n")
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='midway3-0556.rcc.local', release='4.18.0-305.3.1.el8.x86_64', version='#1 SMP Tue Jun 1 16:14:33 UTC 2021', machine='x86_64')  Threads 16
+Python 3.9.19 | packaged by conda-forge | (main, Mar 20 2024, 12:50:21) 
+[GCC 12.3.0]
+numpy 2.0.2  scipy 1.13.1  h5py 3.14.0
+Date: Tue Nov  4 10:27:42 2025
+PySCF version 2.9.0
+PySCF path  /home/tuy/repo/.venv/lib/python3.9/site-packages/pyscf
+mrh path  /home/tuy/repo/mrh
+GIT ORIG_HEAD b98c29c0816fd226852111a125e579215dc0ac5e
+GIT HEAD (branch master) b49e04f5f5ffc1c27967a615ccab8ecdf1806538
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 26
+[INPUT] num. electrons = 96
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT] Symbol           X                Y                Z      unit          X                Y                Z       unit  Magmom
+[INPUT]  1 C      0.637297000000   1.609894000000   0.271644000000 AA    1.204316790007   3.042258749581   0.513332763381 Bohr   0.0
+[INPUT]  2 C      1.671915000000   0.637125000000   0.095037000000 AA    3.159461453552   1.203991757114   0.179593901700 Bohr   0.0
+[INPUT]  3 C      1.555787000000  -0.429383000000  -0.818561000000 AA    2.940011338159  -0.811416272544  -1.546856106250 Bohr   0.0
+[INPUT]  4 C      2.601892000000  -1.301075000000  -1.027366000000 AA    4.916863285697  -2.458675417518  -1.941440369690 Bohr   0.0
+[INPUT]  5 C      3.804515000000  -1.141541000000  -0.343657000000 AA    7.189491386800  -2.157199849962  -0.649417610790 Bohr   0.0
+[INPUT]  6 C      3.944438000000  -0.092275000000   0.554759000000 AA    7.453907535327  -0.174374478144   1.048342575138 Bohr   0.0
+[INPUT]  7 C      2.896357000000   0.779603000000   0.774827000000 AA    5.473321488967   1.473236155889   1.464210823918 Bohr   0.0
+[INPUT]  8 C     -0.637289000000   1.610117000000  -0.271666000000 AA   -1.204301672198   3.042680158506  -0.513374337356 Bohr   0.0
+[INPUT]  9 C     -1.671947000000   0.637404000000  -0.094976000000 AA   -3.159521924788   1.204518990702  -0.179478628407 Bohr   0.0
+[INPUT] 10 C     -1.556248000000  -0.428352000000   0.819552000000 AA   -2.940882501902  -0.809467964910   1.548728824840 Bohr   0.0
+[INPUT] 11 C     -2.602303000000  -1.300124000000   1.028279000000 AA   -4.917639963134  -2.456878287974   1.943165689642 Bohr   0.0
+[INPUT] 12 C     -3.804491000000  -1.141341000000   0.343632000000 AA   -7.189446033373  -2.156821904737   0.649370367637 Bohr   0.0
+[INPUT] 13 C     -3.944028000000  -0.092767000000  -0.555655000000 AA   -7.453132747616  -0.175304223398  -1.050035769745 Bohr   0.0
+[INPUT] 14 C     -2.895976000000   0.779160000000  -0.775661000000 AA   -5.472601503313   1.472399007216  -1.465786855506 Bohr   0.0
+[INPUT] 15 H      0.902253000000   2.448365000000   0.916227000000 AA    1.705011065067   4.626739302971   1.731418097932 Bohr   0.0
+[INPUT] 16 H      0.632452000000  -0.544940000000  -1.373252000000 AA    1.195161066933  -1.029787354320  -2.595070180011 Bohr   0.0
+[INPUT] 17 H      2.490883000000  -2.108975000000  -1.739710000000 AA    4.707086678335  -3.985385153555  -3.287575436167 Bohr   0.0
+[INPUT] 18 H      4.627795000000  -1.820335000000  -0.523243000000 AA    8.745265110632  -3.439934604960  -0.988785966596 Bohr   0.0
+[INPUT] 19 H      4.877985000000   0.045000000000   1.085730000000 AA    9.218055689737   0.085037675605   2.051732345224 Bohr   0.0
+[INPUT] 20 H      3.011386000000   1.601166000000   1.472498000000 AA    5.690694795349   3.025765219965   2.782617938970 Bohr   0.0
+[INPUT] 21 H     -0.901646000000   2.447808000000  -0.917488000000 AA   -1.703864001310   4.625686725519  -1.733801042575 Bohr   0.0
+[INPUT] 22 H     -0.633279000000  -0.543245000000   1.374995000000 AA   -1.196723870438  -1.026584268539   2.598363972646 Bohr   0.0
+[INPUT] 23 H     -2.491625000000  -2.107457000000   1.741317000000 AA   -4.708488855119  -3.982516549298   3.290612226049 Bohr   0.0
+[INPUT] 24 H     -4.627761000000  -1.820157000000   0.523180000000 AA   -8.745200859943  -3.439598233710   0.988666913850 Bohr   0.0
+[INPUT] 25 H     -4.877252000000   0.043926000000  -1.087344000000 AA   -9.216670520487   0.083008109748  -2.054782363189 Bohr   0.0
+[INPUT] 26 H     -3.010699000000   1.600174000000  -1.474031000000 AA   -5.689396553502   3.023890611650  -2.785514889119 Bohr   0.0
+
+nuclear repulsion = 760.096509404157
+number of shells = 94
+number of NR pGTOs = 356
+number of NR cGTOs = 150
+basis = 631g
+ecp = {}
+CPU time:         4.72
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+diis_damp = 0
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /scratch/local/jobs/39127848/tmpha_5lbpg
+max_memory 4000 MB (current use 94 MB)
+Set gradient conv threshold to 3.16228e-05
+Initial guess from minao.
+init E= -541.5640390434
+  HOMO = -0.130870425664538  LUMO = -0.0557161726430374
+cycle= 1 E= -536.749661698997  delta_E= 4.81  |g|= 0.544  |ddm|= 5.09
+  HOMO = -0.249681591595683  LUMO = 0.00867847095059167
+cycle= 2 E= -536.871032312219  delta_E= -0.121  |g|= 0.149  |ddm|= 1.26
+  HOMO = -0.219532311525194  LUMO = 0.0503110185448663
+cycle= 3 E= -536.880198276692  delta_E= -0.00917  |g|= 0.0557  |ddm|= 0.412
+  HOMO = -0.234297597673188  LUMO = 0.0392226365193245
+cycle= 4 E= -536.881314925583  delta_E= -0.00112  |g|= 0.0161  |ddm|= 0.115
+  HOMO = -0.234266957419307  LUMO = 0.040960351111664
+cycle= 5 E= -536.881438668633  delta_E= -0.000124  |g|= 0.00498  |ddm|= 0.0283
+  HOMO = -0.234650188791963  LUMO = 0.0419728646829404
+cycle= 6 E= -536.881467812339  delta_E= -2.91e-05  |g|= 0.00157  |ddm|= 0.0179
+  HOMO = -0.234946836681664  LUMO = 0.042309062110453
+cycle= 7 E= -536.881471680529  delta_E= -3.87e-06  |g|= 0.000588  |ddm|= 0.00714
+  HOMO = -0.235068819709817  LUMO = 0.0423683566055252
+cycle= 8 E= -536.881472008734  delta_E= -3.28e-07  |g|= 0.000144  |ddm|= 0.00221
+  HOMO = -0.235083046125866  LUMO = 0.0423855642734256
+cycle= 9 E= -536.881472025514  delta_E= -1.68e-08  |g|= 5.23e-05  |ddm|= 0.000484
+  HOMO = -0.235084565648799  LUMO = 0.0423875123905727
+cycle= 10 E= -536.881472027117  delta_E= -1.6e-09  |g|= 2.2e-05  |ddm|= 0.0001
+  HOMO = -0.235085881683553  LUMO = 0.0423864265002199
+cycle= 11 E= -536.881472027554  delta_E= -4.37e-10  |g|= 6.51e-06  |ddm|= 6.45e-05
+  HOMO = -0.235085664860211  LUMO = 0.0423861956531835
+Extra cycle  E= -536.881472027588  delta_E= -3.46e-11  |g|= 3.54e-06  |ddm|= 1.61e-05
+converged SCF energy = -536.881472027588
+
+******** LASSCF flags ********
+CAS (5e+5e, 10o), ncore = 43, nvir = 97
+Divided into 3 LAS spaces
+LAS 0 : (2e+2e, 4o)
+LAS 1 : (1e+1e, 2o)
+LAS 2 : (2e+2e, 4o)
+nroots = 1
+max_cycle_macro = 50
+max_cycle_micro = 5
+conv_tol_grad = 0.0001
+max_memory 4000 MB (current use 719 MB)
+fragment 0 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+fragment 1 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+fragment 2 FCI solver flags:
+******** <class 'mrh.my_pyscf.mcscf.addons.get_h1e_zipped_fcisolver.<locals>.FCISolver'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 200
+spin = 0
+State-average over 1 states with weights [1.0]
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.071386649932947), np.float64(-1.0385531313237526), np.float64(-3.071382943463994)]
+LASCI macro 0 : E = -536.821920659654 ; |g_int| = 0.388733250217231 ; |g_ci| = 0.000510243900592315 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.490605769968372 ; |x_ci| = 0.0402240234002162
+LASCI micro 2 : |x_orb| = 0.501824194256379 ; |x_ci| = 0.0343359681264416
+LASCI micro 3 : |x_orb| = 0.518152163013897 ; |x_ci| = 0.0968784509216436
+LASCI micro 4 : |x_orb| = 0.517931650598306 ; |x_ci| = 0.113527688422232
+LASCI micro 5 : |x_orb| = 0.518218293895284 ; |x_ci| = 0.113127051324362
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0719081336632756), np.float64(-1.0971046939837126), np.float64(-3.071910282608701)]
+LASCI macro 1 : E = -536.941063845023 ; |g_int| = 0.181666450997622 ; |g_ci| = 0.000156630896202164 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.320421680945405 ; |x_ci| = 0.0250826000616038
+LASCI micro 2 : |x_orb| = 0.536316843654936 ; |x_ci| = 0.0915451794929729
+LASCI micro 3 : |x_orb| = 0.731745921408742 ; |x_ci| = 0.154419750986733
+LASCI micro 4 : |x_orb| = 0.805107644687543 ; |x_ci| = 0.186882461852942
+LASCI micro 5 : |x_orb| = 0.828160643887493 ; |x_ci| = 0.153389328720452
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0738704873510643), np.float64(-1.094135092077392), np.float64(-3.0738783660309563)]
+LASCI macro 2 : E = -536.971882501189 ; |g_int| = 0.0984326638364439 ; |g_ci| = 0.000728736908526822 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.371041519813528 ; |x_ci| = 0.00866237905973763
+LASCI micro 2 : |x_orb| = 0.449559661524819 ; |x_ci| = 0.024761008641645
+LASCI micro 3 : |x_orb| = 0.460393368449887 ; |x_ci| = 0.0295500500655729
+LASCI micro 4 : |x_orb| = 0.484059749776779 ; |x_ci| = 0.0328958942606918
+LASCI micro 5 : |x_orb| = 0.478840587033155 ; |x_ci| = 0.0345589836918917
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.079905668954394), np.float64(-1.092521573767475), np.float64(-3.0799067595703375)]
+LASCI macro 3 : E = -536.985682457163 ; |g_int| = 0.0491557407287547 ; |g_ci| = 2.79960053825664e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.261932061413323 ; |x_ci| = 0.00565440602168897
+LASCI micro 2 : |x_orb| = 0.270152569779316 ; |x_ci| = 0.0106843729792233
+LASCI micro 3 : |x_orb| = 0.291598554009861 ; |x_ci| = 0.00616581453525995
+LASCI micro 4 : |x_orb| = 0.424295110544654 ; |x_ci| = 0.0248159065799904
+LASCI micro 5 : |x_orb| = 0.439889190248669 ; |x_ci| = 0.0202387287798363
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0914450813049177), np.float64(-1.087384866077762), np.float64(-3.0914433736261584)]
+LASCI macro 4 : E = -536.990022012619 ; |g_int| = 0.0279836722546523 ; |g_ci| = 5.78102690496378e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.363585119711924 ; |x_ci| = 0.00793278323485126
+LASCI micro 2 : |x_orb| = 0.820219499475856 ; |x_ci| = 0.0376309456840056
+LASCI micro 3 : |x_orb| = 1.08280262562373 ; |x_ci| = 0.0261587325864116
+LASCI micro 4 : |x_orb| = 1.93394113469214 ; |x_ci| = 0.0571327191624105
+LASCI micro 5 : |x_orb| = 1.08194975057157 ; |x_ci| = 0.0132200315589731
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.087687114857437), np.float64(-1.0964143483263578), np.float64(-3.0876961525617994)]
+LASCI macro 5 : E = -536.988881794164 ; |g_int| = 0.0195254739319259 ; |g_ci| = 8.16731354077543e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0664983370142008 ; |x_ci| = 0.00166005979820475
+LASCI micro 2 : |x_orb| = 0.0663432361944643 ; |x_ci| = 0.00138669241105869
+LASCI micro 3 : |x_orb| = 0.073023086436599 ; |x_ci| = 0.00245151206638761
+LASCI micro 4 : |x_orb| = 0.0727897364800399 ; |x_ci| = 0.00257283233124607
+LASCI micro 5 : |x_orb| = 0.0717050786080568 ; |x_ci| = 0.00230260432393856
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0882602908422427), np.float64(-1.09459269138065), np.float64(-3.088263035833917)]
+LASCI macro 6 : E = -536.989362592283 ; |g_int| = 0.00995531195728978 ; |g_ci| = 1.11417552084497e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0335524163041671 ; |x_ci| = 0.00106272982090755
+LASCI micro 2 : |x_orb| = 0.0333931869686518 ; |x_ci| = 0.000688881391328835
+LASCI micro 3 : |x_orb| = 0.0376847935370802 ; |x_ci| = 0.00152060693882627
+LASCI micro 4 : |x_orb| = 0.0376016086272925 ; |x_ci| = 0.00156911414791347
+LASCI micro 5 : |x_orb| = 0.0371871637420799 ; |x_ci| = 0.00143434761232471
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0882834599698166), np.float64(-1.0932262365575105), np.float64(-3.088283320394602)]
+LASCI macro 7 : E = -536.989488719719 ; |g_int| = 0.00510901895251647 ; |g_ci| = 2.90726489927649e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.0171568171634447 ; |x_ci| = 0.000626061784952927
+LASCI micro 2 : |x_orb| = 0.0170456331969243 ; |x_ci| = 0.000384971042522946
+LASCI micro 3 : |x_orb| = 0.0197033989736785 ; |x_ci| = 0.000877859413787592
+LASCI micro 4 : |x_orb| = 0.0196254667877833 ; |x_ci| = 0.000981431947657932
+LASCI micro 5 : |x_orb| = 0.0195117221012165 ; |x_ci| = 0.000862060141510075
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.088175698837979), np.float64(-1.092642493199026), np.float64(-3.0881739558907517)]
+LASCI macro 8 : E = -536.989522139465 ; |g_int| = 0.00263665205759641 ; |g_ci| = 1.73916617288413e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00934362219095004 ; |x_ci| = 0.000389351302833289
+LASCI micro 2 : |x_orb| = 0.0092666304245937 ; |x_ci| = 0.000297072731847386
+LASCI micro 3 : |x_orb| = 0.0111878626186754 ; |x_ci| = 0.000450011890766499
+LASCI micro 4 : |x_orb| = 0.0128384771555497 ; |x_ci| = 0.000830031485747254
+LASCI micro 5 : |x_orb| = 0.0129529428046005 ; |x_ci| = 0.000674103060387507
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.087853073002088), np.float64(-1.0924406261361033), np.float64(-3.087850002285193)]
+LASCI macro 9 : E = -536.989531658741 ; |g_int| = 0.00137986857934533 ; |g_ci| = 1.74953066262444e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00765737496828221 ; |x_ci| = 0.000331904340527363
+LASCI micro 2 : |x_orb| = 0.0087006432830683 ; |x_ci| = 0.00062382005261224
+LASCI micro 3 : |x_orb| = 0.0124569608900654 ; |x_ci| = 0.000207169816962633
+LASCI micro 4 : |x_orb| = 0.100209345211907 ; |x_ci| = 0.00445816335189561
+Unstable microiteration aborted: ||x(n)|| > 10*||x(0)||
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0875598055486524), np.float64(-1.0922435495450775), np.float64(-3.087555608044049)]
+LASCI macro 10 : E = -536.989535558063 ; |g_int| = 0.000425573016291769 ; |g_ci| = 2.62850512826312e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.076293320945971 ; |x_ci| = 0.00248753921702084
+LASCI micro 2 : |x_orb| = 0.0723184283229615 ; |x_ci| = 0.00300509521584445
+LASCI micro 3 : |x_orb| = 0.0346540232996371 ; |x_ci| = 0.00028550567489886
+LASCI micro 4 : |x_orb| = 0.0277623033987964 ; |x_ci| = 0.000464410259401853
+LASCI micro 5 : |x_orb| = 0.0267575741396748 ; |x_ci| = 0.000259765325179723
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0884641258771173), np.float64(-1.0922120517106246), np.float64(-3.0884623706216128)]
+LASCI macro 11 : E = -536.989533165717 ; |g_int| = 0.000366961849222047 ; |g_ci| = 1.4087582362156e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00753031255886818 ; |x_ci| = 0.000390245437977863
+LASCI micro 2 : |x_orb| = 0.0079429151496387 ; |x_ci| = 0.000511931294188981
+LASCI micro 3 : |x_orb| = 0.0243585588350063 ; |x_ci| = 0.000260711909531922
+LASCI micro 4 : |x_orb| = 0.0148780333374722 ; |x_ci| = 0.000338889599216878
+LASCI micro 5 : |x_orb| = 0.0148648920259609 ; |x_ci| = 0.000359029259644782
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0889989912229927), np.float64(-1.0922087995795637), np.float64(-3.0889983035035815)]
+LASCI macro 12 : E = -536.989532713971 ; |g_int| = 0.000316053889012222 ; |g_ci| = 3.2509823616119e-06 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00137742655563215 ; |x_ci| = 8.85667334289227e-05
+LASCI micro 2 : |x_orb| = 0.00134976943234637 ; |x_ci| = 7.24394701403797e-05
+LASCI micro 3 : |x_orb| = 0.00223587830463727 ; |x_ci| = 8.44362865861524e-05
+LASCI micro 4 : |x_orb| = 0.0105495294384078 ; |x_ci| = 0.000460772695098849
+LASCI micro 5 : |x_orb| = 0.0112585136967541 ; |x_ci| = 0.000728121118522471
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.0893790321039853), np.float64(-1.092246655082949), np.float64(-3.0893774514922017)]
+LASCI macro 13 : E = -536.989532766341 ; |g_int| = 0.000195228856910542 ; |g_ci| = 1.28712567915971e-05 ; |g_x| = 0
+LASCI micro 1 : |x_orb| = 0.00122282794017926 ; |x_ci| = 4.63244144723962e-05
+LASCI micro 2 : |x_orb| = 0.00130815375012939 ; |x_ci| = 7.17125044647581e-05
+LASCI micro 3 : |x_orb| = 0.0016499558980895 ; |x_ci| = 4.29850400825401e-05
+LASCI subspace 0 with no orbsym information
+LASCI subspace 1 with no orbsym information
+LASCI subspace 2 with no orbsym information
+LASCI subspace CI energies: [np.float64(-3.08945407300999), np.float64(-1.0924362945040833), np.float64(-3.0894564036181285)]
+LASCI macro 14 : E = -536.989532849924 ; |g_int| = 9.59893851401935e-05 ; |g_ci| = 1.35369728286611e-06 ; |g_x| = 0
+LASCI converged after 15 cycles
+LASCI E = -536.989532849925 ; |g_int| = 9.59893851401935e-05 ; |g_ci| = 1.35369728286611e-06 ; |g_ext| = 0
+Fragment 0 natural orbitals
+Natural occ [1.9471812  1.94235095 0.05799011 0.05247774]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2        #3        #4       
+0 C 1s          -0.00101  -0.00055   0.00039   0.00093
+0 C 2s           0.00377  -0.00079   0.00154   0.00143
+0 C 3s          -0.01921   0.01353  -0.02309  -0.05176
+0 C 2px          0.02498   0.00117  -0.00043  -0.03904
+0 C 2py          0.02088  -0.00011  -0.00029  -0.05832
+0 C 2pz         -0.05599  -0.00043  -0.00102   0.08860
+0 C 3px         -0.00963  -0.00742   0.00695  -0.13247
+0 C 3py          0.00977  -0.01007   0.01815  -0.09038
+0 C 3pz         -0.01060   0.00245   0.00106   0.18043
+1 C 1s          -0.00211   0.00007   0.00025  -0.00139
+1 C 2s           0.00437   0.00018  -0.00141   0.00391
+1 C 3s           0.03913  -0.00173  -0.00207   0.05983
+1 C 2px          0.11660   0.00205  -0.00198   0.17302
+1 C 2py          0.21102   0.00548  -0.00475   0.30319
+1 C 2pz         -0.25460  -0.00941   0.01255  -0.37287
+1 C 3px          0.09199   0.01109  -0.02117   0.14512
+1 C 3py          0.17039   0.00721   0.00021   0.32438
+1 C 3pz         -0.19409  -0.00647   0.01115  -0.32582
+2 C 1s           0.00050   0.00063  -0.00070  -0.00190
+2 C 2s          -0.00027  -0.00063   0.00009   0.00294
+2 C 3s           0.00139  -0.00174   0.00770   0.03725
+2 C 2px          0.05902   0.10279  -0.13468  -0.09165
+2 C 2py          0.09759   0.16886  -0.22438  -0.14300
+2 C 2pz         -0.12625  -0.20711   0.27622   0.18097
+2 C 3px          0.05032   0.08185  -0.10829  -0.06489
+2 C 3py          0.07075   0.13839  -0.18937  -0.13872
+2 C 3pz         -0.10388  -0.16646   0.24442   0.17839
+3 C 1s          -0.00019  -0.00005   0.00024   0.00044
+3 C 2s           0.00062   0.00031  -0.00057  -0.00105
+3 C 3s          -0.00470   0.00250  -0.00325  -0.02080
+3 C 2px         -0.04810   0.09305   0.12724  -0.05578
+3 C 2py         -0.08070   0.16289   0.21877  -0.10481
+3 C 2pz          0.10027  -0.19966  -0.26899   0.12670
+3 C 3px         -0.03647   0.07712   0.11891  -0.04436
+3 C 3py         -0.06957   0.13367   0.20267  -0.09114
+3 C 3pz          0.08528  -0.16469  -0.25597   0.10202
+4 C 1s          -0.00052   0.00012  -0.00030   0.00008
+4 C 2s           0.00135  -0.00014   0.00005  -0.00094
+4 C 3s          -0.00187  -0.00274   0.00604   0.00087
+4 C 2px         -0.09628  -0.00401  -0.00093   0.12442
+4 C 2py         -0.17126  -0.00742  -0.00022   0.22279
+4 C 2pz          0.21321   0.00956   0.00052  -0.27695
+4 C 3px         -0.08278  -0.00154  -0.00201   0.11363
+4 C 3py         -0.14780  -0.00671   0.00572   0.20726
+4 C 3pz          0.18234   0.00867   0.00025  -0.25871
+5 C 1s           0.00021   0.00024   0.00027  -0.00021
+5 C 2s          -0.00059  -0.00119  -0.00031  -0.00051
+5 C 3s          -0.00251   0.00326  -0.01470  -0.00734
+5 C 2px         -0.04022  -0.09451  -0.12329  -0.06206
+5 C 2py         -0.07165  -0.16693  -0.21758  -0.11073
+5 C 2pz          0.09076   0.21029   0.27458   0.13761
+5 C 3px         -0.03604  -0.08048  -0.11030  -0.05197
+5 C 3py         -0.06649  -0.13537  -0.20487  -0.09451
+5 C 3pz          0.07525   0.17082   0.25953   0.10854
+6 C 1s          -0.00029   0.00019  -0.00034   0.00028
+6 C 2s           0.00178  -0.00028   0.00047  -0.00007
+6 C 3s          -0.00672  -0.00880   0.01781  -0.01526
+6 C 2px          0.06419  -0.09067   0.12830  -0.07757
+6 C 2py          0.11426  -0.16034   0.22764  -0.13766
+6 C 2pz         -0.14088   0.20290  -0.28610   0.17763
+6 C 3px          0.06580  -0.07476   0.11657  -0.05795
+6 C 3py          0.09413  -0.12910   0.19187  -0.14154
+6 C 3pz         -0.11111   0.16885  -0.25572   0.16728
+7 C 1s          -0.00111   0.00033  -0.00086  -0.00118
+7 C 2s          -0.00008   0.00032  -0.00237   0.00441
+7 C 3s           0.03111  -0.01479   0.03047  -0.02719
+7 C 2px         -0.01214  -0.00215   0.00380  -0.00399
+7 C 2py          0.00790  -0.00148   0.00019   0.00709
+7 C 2pz          0.03936   0.00189  -0.00498   0.02060
+7 C 3px         -0.02889  -0.00108   0.00311  -0.00610
+7 C 3py         -0.00463   0.01344  -0.02322   0.02444
+7 C 3pz          0.05302  -0.00905   0.00699  -0.01633
+8 C 1s          -0.00164  -0.00069   0.00093   0.00528
+8 C 2s           0.00494   0.00158  -0.00082  -0.00972
+8 C 3s           0.00154   0.01375  -0.01849  -0.04421
+8 C 2px          0.00737   0.00264  -0.00412  -0.01193
+8 C 2py          0.00789  -0.00064   0.00210  -0.01539
+8 C 2pz          0.00203  -0.00080   0.00335  -0.00672
+8 C 3px         -0.03424   0.00981  -0.01812   0.01041
+8 C 3py         -0.02303   0.00171  -0.00572   0.00191
+8 C 3pz          0.00160   0.00184   0.00134  -0.00342
+9 C 1s          -0.00282  -0.00148   0.00180   0.00045
+9 C 2s           0.00723   0.00538  -0.00275  -0.00012
+9 C 3s          -0.00015   0.00107  -0.00633  -0.00563
+9 C 2px          0.01927   0.00690  -0.00860   0.00481
+9 C 2py         -0.00990  -0.00112   0.00385  -0.00749
+9 C 2pz         -0.00204   0.00039   0.00284  -0.00626
+9 C 3px          0.03793  -0.00159  -0.00369  -0.01409
+9 C 3py         -0.01469  -0.00236   0.00872   0.00959
+9 C 3pz          0.01518   0.00667   0.00517  -0.02691
+10 C 1s          0.00080   0.00039  -0.00047   0.00019
+10 C 2s         -0.00214  -0.00074   0.00090  -0.00057
+10 C 3s          0.01083  -0.00517   0.00436  -0.00389
+10 C 2px        -0.00201  -0.00037   0.00119  -0.00209
+10 C 2py        -0.00433  -0.00276   0.00218   0.00132
+10 C 2pz        -0.00402  -0.00216   0.00125   0.00140
+10 C 3px        -0.00026   0.00053   0.00421   0.00811
+10 C 3py         0.00421  -0.00433   0.00043  -0.00421
+10 C 3pz        -0.01337  -0.00366   0.00001   0.00880
+11 C 1s         -0.00071  -0.00028   0.00028   0.00029
+11 C 2s          0.00219   0.00050  -0.00064  -0.00096
+11 C 3s         -0.00876   0.00220  -0.00030   0.01010
+11 C 2px         0.00001   0.00078  -0.00029  -0.00270
+11 C 2py         0.00550   0.00007  -0.00130   0.00463
+11 C 2pz         0.00806   0.00053  -0.00211   0.00689
+11 C 3px        -0.00742   0.00126  -0.00046   0.00182
+11 C 3py         0.00308   0.00117  -0.00239   0.00698
+11 C 3pz         0.01277   0.00140  -0.00064   0.00908
+12 C 1s         -0.00027  -0.00010   0.00010   0.00056
+12 C 2s          0.00013   0.00025  -0.00022  -0.00065
+12 C 3s          0.01539  -0.00162   0.00466  -0.01136
+12 C 2px         0.00139  -0.00014   0.00049  -0.00202
+12 C 2py        -0.00006   0.00058  -0.00103  -0.00014
+12 C 2pz        -0.00021   0.00079  -0.00143   0.00123
+12 C 3px         0.00749  -0.00144   0.00213  -0.00891
+12 C 3py        -0.00119   0.00056  -0.00062  -0.00065
+12 C 3pz         0.00360   0.00084  -0.00111  -0.00251
+13 C 1s         -0.00010   0.00007  -0.00004  -0.00099
+13 C 2s          0.00152  -0.00026   0.00039   0.00127
+13 C 3s         -0.02132   0.00377  -0.00697   0.02199
+13 C 2px         0.00424   0.00030   0.00010   0.00793
+13 C 2py        -0.00792  -0.00076  -0.00010  -0.00669
+13 C 2pz        -0.01001  -0.00132   0.00035  -0.00284
+13 C 3px         0.00317   0.00088   0.00058   0.01124
+13 C 3py         0.00320  -0.00365   0.00529  -0.01643
+13 C 3pz        -0.02297  -0.00007  -0.00366   0.00602
+14 H 1s         -0.01544   0.00046  -0.00150  -0.01209
+14 H 2s         -0.02512   0.00217  -0.00843  -0.01761
+15 H 1s         -0.00007  -0.00144  -0.00016   0.00172
+15 H 2s         -0.00227  -0.00051   0.00524   0.00466
+16 H 1s         -0.00066   0.00046   0.00020  -0.00025
+16 H 2s         -0.00075   0.00004  -0.00150   0.00024
+17 H 1s         -0.00001   0.00005  -0.00005   0.00010
+17 H 2s         -0.00023  -0.00009   0.00136  -0.00003
+18 H 1s         -0.00011  -0.00002   0.00001  -0.00008
+18 H 2s          0.00070   0.00100  -0.00107   0.00185
+19 H 1s          0.00062   0.00023  -0.00032   0.00154
+19 H 2s         -0.00542   0.00132  -0.00186   0.00561
+20 H 1s         -0.01024  -0.00194   0.00178   0.01459
+20 H 2s         -0.00006  -0.00810   0.00937   0.02291
+21 H 1s          0.00789   0.00433  -0.00333   0.00135
+21 H 2s         -0.02497  -0.00146  -0.00502   0.03111
+22 H 1s         -0.00161  -0.00039   0.00032  -0.00024
+22 H 2s          0.00202  -0.00044  -0.00011  -0.00354
+23 H 1s         -0.00114  -0.00031   0.00030   0.00001
+23 H 2s         -0.00355  -0.00029  -0.00001   0.00130
+24 H 1s         -0.00002  -0.00007   0.00003   0.00104
+24 H 2s          0.00201  -0.00028   0.00011   0.00005
+25 H 1s         -0.00055  -0.00008  -0.00006   0.00034
+25 H 2s         -0.00673   0.00120  -0.00269   0.00815
+Fragment 1 natural orbitals
+Natural occ [1.82427966 0.17572034]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2       
+0 C 1s          -0.00256   0.00156
+0 C 2s           0.00325  -0.00672
+0 C 3s           0.01735  -0.04067
+0 C 2px          0.13943  -0.17869
+0 C 2py          0.17627  -0.20498
+0 C 2pz         -0.32630   0.44191
+0 C 3px          0.21201  -0.18983
+0 C 3py          0.12097  -0.10195
+0 C 3pz         -0.25220   0.38930
+1 C 1s           0.01143   0.00916
+1 C 2s          -0.02098  -0.01997
+1 C 3s          -0.14379   0.04747
+1 C 2px          0.04009   0.05247
+1 C 2py         -0.00395   0.00086
+1 C 2pz         -0.01753  -0.04442
+1 C 3px          0.04413   0.03657
+1 C 3py         -0.10183   0.09109
+1 C 3pz         -0.01686  -0.09148
+2 C 1s           0.00594  -0.00267
+2 C 2s          -0.01070   0.00460
+2 C 3s          -0.06819   0.03492
+2 C 2px         -0.00457   0.02576
+2 C 2py         -0.04530   0.04807
+2 C 2pz          0.04644  -0.02908
+2 C 3px         -0.04327   0.03074
+2 C 3py         -0.02800   0.02825
+2 C 3pz          0.03870  -0.02864
+3 C 1s          -0.00176   0.00122
+3 C 2s           0.00262  -0.00198
+3 C 3s           0.03936  -0.02098
+3 C 2px         -0.00899  -0.00396
+3 C 2py         -0.00049  -0.01574
+3 C 2pz          0.00669   0.01160
+3 C 3px         -0.01177   0.00061
+3 C 3py          0.01022  -0.02643
+3 C 3pz          0.01261   0.01845
+4 C 1s           0.00145   0.00090
+4 C 2s          -0.00238  -0.00249
+4 C 3s          -0.01008  -0.00557
+4 C 2px          0.01547  -0.00891
+4 C 2py          0.02098  -0.02259
+4 C 2pz         -0.02695   0.02681
+4 C 3px          0.02458  -0.01075
+4 C 3py          0.02550  -0.01460
+4 C 3pz         -0.03604   0.02336
+5 C 1s           0.00145   0.00056
+5 C 2s          -0.00220  -0.00196
+5 C 3s           0.00591  -0.00758
+5 C 2px          0.00105  -0.00158
+5 C 2py         -0.00640  -0.01038
+5 C 2pz          0.00475   0.01146
+5 C 3px          0.00300  -0.00707
+5 C 3py          0.00101  -0.01829
+5 C 3pz          0.00759   0.01526
+6 C 1s          -0.00244   0.00020
+6 C 2s           0.00428  -0.00013
+6 C 3s           0.02567  -0.00914
+6 C 2px         -0.03276   0.01949
+6 C 2py         -0.04016   0.03758
+6 C 2pz          0.03825  -0.05306
+6 C 3px         -0.05331   0.02445
+6 C 3py         -0.02916   0.02399
+6 C 3pz          0.04107  -0.04128
+7 C 1s           0.00267   0.00171
+7 C 2s          -0.00347  -0.00700
+7 C 3s          -0.01754  -0.04230
+7 C 2px          0.13944   0.17860
+7 C 2py         -0.17661  -0.20544
+7 C 2pz         -0.32611  -0.44174
+7 C 3px          0.21195   0.18958
+7 C 3py         -0.12132  -0.10207
+7 C 3pz         -0.25199  -0.38940
+8 C 1s          -0.01144   0.00913
+8 C 2s           0.02101  -0.01989
+8 C 3s           0.14378   0.04766
+8 C 2px          0.04014  -0.05237
+8 C 2py          0.00396   0.00102
+8 C 2pz         -0.01751   0.04438
+8 C 3px          0.04405  -0.03612
+8 C 3py          0.10169   0.09139
+8 C 3pz         -0.01686   0.09148
+9 C 1s          -0.00595  -0.00266
+9 C 2s           0.01072   0.00458
+9 C 3s           0.06819   0.03490
+9 C 2px         -0.00458  -0.02583
+9 C 2py          0.04534   0.04808
+9 C 2pz          0.04639   0.02902
+9 C 3px         -0.04323  -0.03093
+9 C 3py          0.02796   0.02826
+9 C 3pz          0.03872   0.02854
+10 C 1s          0.00176   0.00121
+10 C 2s         -0.00263  -0.00197
+10 C 3s         -0.03936  -0.02104
+10 C 2px        -0.00900   0.00399
+10 C 2py         0.00049  -0.01573
+10 C 2pz         0.00668  -0.01158
+10 C 3px        -0.01180  -0.00057
+10 C 3py        -0.01022  -0.02646
+10 C 3pz         0.01259  -0.01841
+11 C 1s         -0.00145   0.00090
+11 C 2s          0.00239  -0.00250
+11 C 3s          0.01007  -0.00550
+11 C 2px         0.01550   0.00892
+11 C 2py        -0.02099  -0.02261
+11 C 2pz        -0.02692  -0.02680
+11 C 3px         0.02459   0.01080
+11 C 3py        -0.02551  -0.01459
+11 C 3pz        -0.03600  -0.02336
+12 C 1s         -0.00145   0.00056
+12 C 2s          0.00221  -0.00194
+12 C 3s         -0.00585  -0.00770
+12 C 2px         0.00105   0.00162
+12 C 2py         0.00641  -0.01037
+12 C 2pz         0.00474  -0.01146
+12 C 3px         0.00302   0.00703
+12 C 3py        -0.00099  -0.01828
+12 C 3pz         0.00759  -0.01528
+13 C 1s          0.00244   0.00021
+13 C 2s         -0.00429  -0.00018
+13 C 3s         -0.02573  -0.00889
+13 C 2px        -0.03280  -0.01958
+13 C 2py         0.04017   0.03761
+13 C 2pz         0.03818   0.05300
+13 C 3px        -0.05333  -0.02446
+13 C 3py         0.02923   0.02385
+13 C 3pz         0.04097   0.04136
+14 H 1s          0.03493   0.04163
+14 H 2s          0.07343   0.01830
+15 H 1s         -0.00720  -0.00198
+15 H 2s         -0.00650  -0.01101
+16 H 1s          0.00097   0.00381
+16 H 2s          0.00334   0.00561
+17 H 1s          0.00131   0.00070
+17 H 2s          0.00053   0.00250
+18 H 1s          0.00226   0.00193
+18 H 2s          0.00195   0.00401
+19 H 1s         -0.00032   0.00056
+19 H 2s          0.00088   0.00604
+20 H 1s         -0.03491   0.04178
+20 H 2s         -0.07341   0.01844
+21 H 1s          0.00721  -0.00200
+21 H 2s          0.00642  -0.01095
+22 H 1s         -0.00097   0.00381
+22 H 2s         -0.00334   0.00560
+23 H 1s         -0.00131   0.00071
+23 H 2s         -0.00054   0.00252
+24 H 1s         -0.00226   0.00192
+24 H 2s         -0.00196   0.00397
+25 H 1s          0.00032   0.00055
+25 H 2s         -0.00091   0.00608
+Fragment 2 natural orbitals
+Natural occ [1.94718128 1.94235046 0.05799035 0.0524779 ]
+Natural orbital (expansion on AOs) in CAS space
+               #1        #2        #3        #4       
+0 C 1s           0.00112   0.00033  -0.00086  -0.00120
+0 C 2s           0.00006   0.00034  -0.00238   0.00445
+0 C 3s          -0.03118  -0.01490   0.03059  -0.02705
+0 C 2px         -0.01209   0.00215  -0.00379   0.00392
+0 C 2py         -0.00786  -0.00149   0.00021   0.00707
+0 C 2pz          0.03939  -0.00189   0.00497  -0.02064
+0 C 3px         -0.02881   0.00113  -0.00316   0.00611
+0 C 3py          0.00466   0.01349  -0.02326   0.02436
+0 C 3pz          0.05306   0.00906  -0.00702   0.01627
+1 C 1s           0.00164  -0.00069   0.00093   0.00528
+1 C 2s          -0.00495   0.00158  -0.00082  -0.00973
+1 C 3s          -0.00157   0.01376  -0.01851  -0.04427
+1 C 2px          0.00739  -0.00264   0.00413   0.01194
+1 C 2py         -0.00790  -0.00063   0.00209  -0.01539
+1 C 2pz          0.00203   0.00080  -0.00336   0.00672
+1 C 3px         -0.03425  -0.00987   0.01819  -0.01030
+1 C 3py          0.02301   0.00172  -0.00572   0.00185
+1 C 3pz          0.00160  -0.00184  -0.00133   0.00343
+2 C 1s           0.00282  -0.00148   0.00180   0.00045
+2 C 2s          -0.00724   0.00538  -0.00276  -0.00011
+2 C 3s           0.00010   0.00108  -0.00631  -0.00565
+2 C 2px          0.01928  -0.00691   0.00861  -0.00482
+2 C 2py          0.00991  -0.00112   0.00385  -0.00749
+2 C 2pz         -0.00205  -0.00039  -0.00285   0.00625
+2 C 3px          0.03795   0.00161   0.00367   0.01405
+2 C 3py          0.01473  -0.00238   0.00873   0.00963
+2 C 3pz          0.01516  -0.00667  -0.00518   0.02688
+3 C 1s          -0.00081   0.00039  -0.00047   0.00020
+3 C 2s           0.00214  -0.00075   0.00090  -0.00058
+3 C 3s          -0.01080  -0.00520   0.00437  -0.00387
+3 C 2px         -0.00202   0.00038  -0.00119   0.00210
+3 C 2py          0.00432  -0.00276   0.00218   0.00132
+3 C 2pz         -0.00402   0.00216  -0.00125  -0.00141
+3 C 3px         -0.00027  -0.00053  -0.00421  -0.00813
+3 C 3py         -0.00422  -0.00434   0.00043  -0.00421
+3 C 3pz         -0.01336   0.00366  -0.00000  -0.00878
+4 C 1s           0.00071  -0.00028   0.00028   0.00029
+4 C 2s          -0.00219   0.00050  -0.00064  -0.00096
+4 C 3s           0.00875   0.00222  -0.00030   0.01009
+4 C 2px          0.00002  -0.00078   0.00030   0.00269
+4 C 2py         -0.00549   0.00007  -0.00130   0.00463
+4 C 2pz          0.00807  -0.00053   0.00211  -0.00689
+4 C 3px         -0.00741  -0.00127   0.00046  -0.00183
+4 C 3py         -0.00307   0.00118  -0.00239   0.00696
+4 C 3pz          0.01278  -0.00140   0.00064  -0.00909
+5 C 1s           0.00028  -0.00010   0.00010   0.00056
+5 C 2s          -0.00013   0.00025  -0.00022  -0.00066
+5 C 3s          -0.01540  -0.00164   0.00468  -0.01135
+5 C 2px          0.00140   0.00014  -0.00049   0.00202
+5 C 2py          0.00006   0.00058  -0.00103  -0.00014
+5 C 2pz         -0.00021  -0.00079   0.00143  -0.00123
+5 C 3px          0.00750   0.00146  -0.00214   0.00891
+5 C 3py          0.00119   0.00056  -0.00062  -0.00066
+5 C 3pz          0.00359  -0.00083   0.00110   0.00249
+6 C 1s           0.00010   0.00007  -0.00004  -0.00099
+6 C 2s          -0.00152  -0.00026   0.00039   0.00128
+6 C 3s           0.02134   0.00382  -0.00702   0.02195
+6 C 2px          0.00422  -0.00030  -0.00010  -0.00793
+6 C 2py          0.00791  -0.00076  -0.00010  -0.00669
+6 C 2pz         -0.01002   0.00133  -0.00035   0.00285
+6 C 3px          0.00315  -0.00088  -0.00057  -0.01122
+6 C 3py         -0.00322  -0.00367   0.00531  -0.01641
+6 C 3pz         -0.02298   0.00006   0.00368  -0.00598
+7 C 1s           0.00103  -0.00056   0.00039   0.00095
+7 C 2s          -0.00382  -0.00080   0.00155   0.00138
+7 C 3s           0.01921   0.01363  -0.02323  -0.05184
+7 C 2px          0.02497  -0.00117   0.00043   0.03905
+7 C 2py         -0.02094  -0.00012  -0.00029  -0.05841
+7 C 2pz         -0.05597   0.00043   0.00102  -0.08853
+7 C 3px         -0.00957   0.00746  -0.00700   0.13250
+7 C 3py         -0.00977  -0.01013   0.01821  -0.09053
+7 C 3pz         -0.01059  -0.00239  -0.00113  -0.18028
+8 C 1s           0.00211   0.00006   0.00025  -0.00139
+8 C 2s          -0.00436   0.00018  -0.00141   0.00393
+8 C 3s          -0.03911  -0.00176  -0.00207   0.05977
+8 C 2px          0.11682  -0.00205   0.00199  -0.17330
+8 C 2py         -0.21120   0.00548  -0.00475   0.30348
+8 C 2pz         -0.25436   0.00940  -0.01254   0.37251
+8 C 3px          0.09216  -0.01114   0.02127  -0.14541
+8 C 3py         -0.17049   0.00720   0.00021   0.32460
+8 C 3pz         -0.19392   0.00643  -0.01109   0.32549
+9 C 1s          -0.00050   0.00062  -0.00070  -0.00190
+9 C 2s           0.00026  -0.00062   0.00008   0.00294
+9 C 3s          -0.00137  -0.00175   0.00771   0.03726
+9 C 2px          0.05914  -0.10297   0.13493   0.09182
+9 C 2py         -0.09768   0.16900  -0.22457  -0.14313
+9 C 2pz         -0.12614   0.20690  -0.27595  -0.18080
+9 C 3px          0.05040  -0.08197   0.10846   0.06506
+9 C 3py         -0.07080   0.13851  -0.18957  -0.13884
+9 C 3pz         -0.10382   0.16629  -0.24420  -0.17825
+10 C 1s          0.00019  -0.00005   0.00025   0.00044
+10 C 2s         -0.00062   0.00031  -0.00057  -0.00105
+10 C 3s          0.00469   0.00253  -0.00329  -0.02079
+10 C 2px        -0.04818  -0.09322  -0.12747   0.05589
+10 C 2py         0.08076   0.16302   0.21895  -0.10488
+10 C 2pz         0.10017   0.19948   0.26873  -0.12658
+10 C 3px        -0.03653  -0.07726  -0.11915   0.04447
+10 C 3py         0.06961   0.13378   0.20282  -0.09120
+10 C 3pz         0.08520   0.16453   0.25573  -0.10191
+11 C 1s          0.00052   0.00012  -0.00031   0.00008
+11 C 2s         -0.00134  -0.00014   0.00005  -0.00094
+11 C 3s          0.00188  -0.00275   0.00606   0.00089
+11 C 2px        -0.09645   0.00401   0.00093  -0.12464
+11 C 2py         0.17139  -0.00742  -0.00023   0.22297
+11 C 2pz         0.21301  -0.00955  -0.00051   0.27669
+11 C 3px        -0.08292   0.00154   0.00201  -0.11384
+11 C 3py         0.14792  -0.00672   0.00574   0.20743
+11 C 3pz         0.18217  -0.00866  -0.00027   0.25848
+12 C 1s         -0.00021   0.00024   0.00027  -0.00022
+12 C 2s          0.00059  -0.00119  -0.00031  -0.00051
+12 C 3s          0.00250   0.00327  -0.01471  -0.00731
+12 C 2px        -0.04029   0.09469   0.12351   0.06218
+12 C 2py         0.07171  -0.16706  -0.21775  -0.11080
+12 C 2pz         0.09068  -0.21011  -0.27434  -0.13747
+12 C 3px        -0.03610   0.08063   0.11051   0.05207
+12 C 3py         0.06654  -0.13548  -0.20502  -0.09455
+12 C 3pz         0.07517  -0.17066  -0.25933  -0.10843
+13 C 1s          0.00029   0.00019  -0.00035   0.00029
+13 C 2s         -0.00179  -0.00029   0.00048  -0.00009
+13 C 3s          0.00671  -0.00884   0.01789  -0.01530
+13 C 2px         0.06429   0.09083  -0.12852   0.07772
+13 C 2py        -0.11434  -0.16048   0.22783  -0.13779
+13 C 2pz        -0.14076  -0.20272   0.28585  -0.17749
+13 C 3px         0.06587   0.07488  -0.11674   0.05811
+13 C 3py        -0.09421  -0.12921   0.19202  -0.14165
+13 C 3pz        -0.11099  -0.16872   0.25553  -0.16715
+14 H 1s          0.01024  -0.00194   0.00178   0.01457
+14 H 2s          0.00009  -0.00812   0.00939   0.02288
+15 H 1s         -0.00789   0.00434  -0.00333   0.00135
+15 H 2s          0.02499  -0.00144  -0.00504   0.03111
+16 H 1s          0.00162  -0.00039   0.00032  -0.00024
+16 H 2s         -0.00201  -0.00044  -0.00011  -0.00354
+17 H 1s          0.00114  -0.00031   0.00030   0.00001
+17 H 2s          0.00355  -0.00029  -0.00001   0.00129
+18 H 1s          0.00002  -0.00007   0.00003   0.00104
+18 H 2s         -0.00200  -0.00028   0.00011   0.00005
+19 H 1s          0.00055  -0.00008  -0.00006   0.00035
+19 H 2s          0.00674   0.00121  -0.00270   0.00813
+20 H 1s          0.01543   0.00046  -0.00150  -0.01205
+20 H 2s          0.02512   0.00220  -0.00846  -0.01758
+21 H 1s          0.00007  -0.00144  -0.00016   0.00171
+21 H 2s          0.00230  -0.00052   0.00527   0.00464
+22 H 1s          0.00066   0.00046   0.00020  -0.00026
+22 H 2s          0.00075   0.00005  -0.00151   0.00023
+23 H 1s          0.00001   0.00005  -0.00005   0.00010
+23 H 2s          0.00023  -0.00009   0.00136  -0.00004
+24 H 1s          0.00010  -0.00002   0.00001  -0.00009
+24 H 2s         -0.00070   0.00100  -0.00108   0.00184
+25 H 1s         -0.00061   0.00023  -0.00033   0.00154
+25 H 2s          0.00542   0.00131  -0.00186   0.00561
+LASCI energy = -536.989532849925
+
+******** CASCI flags ********
+CAS (5e+5e, 10o), ncore = 43, nvir = 97
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 (MB)
+******** <class 'pyscf.fci.direct_spin1.FCISolver'> ********
+max. cycles = 200
+conv_tol = 1e-08
+davidson only = False
+linear dependence = 1e-12
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+Density matrix diagonal elements [1.92689329 1.93670567 0.06362783 0.07181605 1.77704536 0.22486827
+ 1.92689554 1.93670546 0.06362759 0.07181495]
+CASCI converged
+CASCI E = -537.003043693203  E(CI) = -11.6243007082317  S^2 = 0.0000000
+
+******** CASCI flags ********
+CAS (5e+5e, 10o), ncore = 43, nvir = 97
+natorb = False
+canonicalization = True
+sorting_mo_energy = False
+max_memory 4000 (MB)
+******** <class 'mrh.exploratory.unitary_cc.lasuccsd.FCISolver_USCC'> ********
+max. cycles = 100
+conv_tol = 1e-10
+davidson only = False
+linear dependence = 1e-14
+level shift = 0.001
+max iter space = 12
+max_memory 4000 MB
+nroots = 1
+pspace_size = 400
+spin = None
+LASCI object has 53 degrees of freedom
+iteration 0, E = -536.997600, |x| = 1.370840e-01, |g| = 4.812449e-02
+iteration 1, E = -536.998664, |x| = 1.363922e-01, |g| = 1.332572e-02
+iteration 2, E = -536.998800, |x| = 1.432211e-01, |g| = 3.965989e-03
+iteration 3, E = -536.998807, |x| = 1.464157e-01, |g| = 2.236069e-03
+iteration 4, E = -536.998808, |x| = 1.466847e-01, |g| = 1.069891e-03
+iteration 5, E = -536.998809, |x| = 1.462797e-01, |g| = 7.711978e-05
+iteration 6, E = -536.998809, |x| = 1.463100e-01, |g| = 3.909047e-05
+iteration 7, E = -536.998809, |x| = 1.463124e-01, |g| = 9.861511e-06
+iteration 8, E = -536.998809, |x| = 1.463090e-01, |g| = 3.391432e-06
+iteration 9, E = -536.998809, |x| = 1.463094e-01, |g| = 1.453959e-06
+Fragment 0 local quantum numbers
+<N>,<Sz>,<S^2> = 3.999382, -0.000000, 0.006827
+Fragment 1 local quantum numbers
+<N>,<Sz>,<S^2> = 2.001234, -0.000000, 0.013411
+Fragment 2 local quantum numbers
+<N>,<Sz>,<S^2> = 3.999384, 0.000000, 0.006792
+Whole system quantum numbers
+<N>,<Sz>,<S^2> = 10.000000, -0.000000, 0.002157
+Density matrix diagonal elements [1.93862071 1.94064217 0.05967928 0.06043975 1.80728159 0.19395249
+ 1.93869292 1.94063894 0.05968191 0.06037025]
+CASCI converged
+CASCI E = -536.998808628625  E(CI) = -11.6200656436537  S^2 = 0.0021573
