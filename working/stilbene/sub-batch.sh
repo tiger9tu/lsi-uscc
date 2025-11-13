@@ -12,7 +12,7 @@
 # 根据 cpus-per-task 设定 OpenMP
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
-source /home/tuy/repo/.venv/bin/activate
+source /project/lgagliardi/tuy/qchem/.venv/bin/activate
 
 # 一个小函数，减少重复
 run() {

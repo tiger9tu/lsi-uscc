@@ -9,7 +9,7 @@
 
 
 export OMP_NUM_THREADS=16
-source /home/tuy/repo/.venv/bin/activate
+source /project/lgagliardi/tuy/qchem/.venv/bin/activate
 
 
 # /usr/bin/time -v  python c6_631g_gradportion.py 0.5 > c6_631g_result_gradportion05.txt

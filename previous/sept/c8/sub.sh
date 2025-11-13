@@ -8,6 +8,6 @@
 #SBATCH --ntasks-per-node=24
 
 export OMP_NUM_THREADS=16
-source /home/tuy/repo/.venv/bin/activate
+source /project/lgagliardi/tuy/qchem/.venv/bin/activate
 python c8_energy_comparison.py > c8.txt 
 

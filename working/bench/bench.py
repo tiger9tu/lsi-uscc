@@ -1,7 +1,6 @@
 # test the distribution of the nearest neighbor excitations
 
 import numpy as np
-import pyscf
 from pyscf import gto, scf, lib, mcscf
 from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
 from mrh.exploratory.unitary_cc import lasuccsd
@@ -19,10 +18,13 @@ from scipy.linalg import eigh
 from scipy import optimize
 import sys
 import time
+import functools
 
 VERBOSE = 4
 LINEARIZE = True
+THRESHOLD = 8e5
 result = {}
+
 if len(sys.argv) > 1:
     try:
         AMPLITUDE = float(sys.argv[1])
@@ -50,6 +52,22 @@ def cilas2f(lasci, norb_f, nelec_f):
         ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
     return ci_f
 
+def timeit(func=None, *, label=None, logger=print):
+    """Decorator to time a function. Use as @timeit or @timeit(label='name')."""
+    if func is None:
+        return lambda f: timeit(f, label=label, logger=logger)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        t0 = time.perf_counter()
+        result = func(*args, **kwargs)
+        t1 = time.perf_counter()
+        if VERBOSE >= 1:
+            logger(f"{label or func.__name__} took {(t1 - t0) * 1000:.3f} ms")
+        return result
+
+    return wrapper
+
 class MolConfig(TypedDict):
     # basic
     name : str
@@ -59,21 +77,11 @@ class MolConfig(TypedDict):
     nelecas: List[int]
     spinsub: List[int]
     frag_atom_list: Any  # Can be List or Tuple depending on usage
-    frag_spin_orb: Any
-    adj: List[List[int]]
 
 class TestConfig(TypedDict):
     epsilon: float
     # nearest neighbor parameters
     factor: None
-    nn: bool
-    # non-orthogonal configuration interaction parameters
-    init_method: str # 'random' or 'uscc_opt' or 'load x'
-    # max_nx: int  # max number of excitations per configuration
-    # min_nc: int
-    # test choices
-    grad_test: bool
-    noci_test: bool  
     frozen: str
 
 def get_Sij(psi_i, psi_j, h):
@@ -115,6 +123,39 @@ def print_excitations(a_idxs, i_idxs):
     for excitation in excitations:
         print([[int(x) for x in flatten(excitation)]])
 
+def psi_selection(trial_psi):
+    selected_indices = []
+    for idx, psi in enumerate(trial_psi):
+        # Build S matrix for current selection + this CI
+        n_sel = len(selected_indices)
+        S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
+        # Fill previous block
+        if n_sel > 0:
+            S_new[:n_sel, :n_sel] = S_inc
+            for j, jidx in enumerate(selected_indices):
+                S_new[n_sel, j] = get_Sij(psi, trial_psi[jidx], h)
+                S_new[j, n_sel] = get_Sij(trial_psi[jidx], psi, h)
+        # Diagonal element
+        S_new[n_sel, n_sel] = get_Sij(psi, psi, h)
+        # Check condition number
+        cond = np.linalg.cond(S_new)
+        if cond < threshold:
+            selected_indices.append(idx)
+            S_inc = S_new
+        else:
+            if VERBOSE >= 4:
+                print(f"Discarding CI {idx} due to linear dependence (cond={cond:.2e})")
+    return selected_indices
+
+def constructSH(trial_psi, h):
+    nc = len(trial_psi)
+    S = np.zeros((nc, nc), dtype=np.complex128)
+    H = np.zeros((nc, nc), dtype=np.complex128)
+
+    for i in range(nc):
+        for j in range(nc):
+            S[i, j], H[i, j] = get_Sij_Hij(trial_psi[i], trial_psi[j], h)
+    return S, H
 
 def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf):
 
@@ -143,9 +184,10 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         fci = mc_uscc_ci.fcisolver
         las_ci0_f = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas'])
 
+        norb_f = mol_config['ncas']
         norb = sum(mol_config['ncas']) # not sure about this
         nelec = sum(mol_config['nelecas']) # not sure about this
-        norb_f = getattr (fci, 'norb_f', [norb])
+        
         psi =  getattr (fci, 'psi', fci.build_psi (las_ci0_f, norb, norb_f, nelec, frozen=test_config['frozen']))
         psi.uop.linearize = LINEARIZE
         if i < nc - 1:
@@ -157,63 +199,26 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
             min_ci_eng = energy
 
         las_ucc_trial_cis.append(psi)
-        
-    result['amps'] = amps
+    
+    print("Minimum CI energy: ", min_ci_eng)
+    # result['amps'] = amps
+    if VERBOSE >= 4:
+        print("amplitudes: ", amps)
+
     S = np.zeros((nc, nc), dtype=np.complex128)
     H = np.zeros((nc, nc), dtype=np.complex128)
     h = [e_core, h1eff, h2eff]
 
-
     # Build S matrix incrementally, discarding linearly dependent CIs
     selected_indices = []
     S_inc = np.zeros((0, 0), dtype=np.complex128)
-    threshold = 1e5  # You can adjust this threshold as needed
+    threshold = THRESHOLD # You can adjust this threshold as needed
 
+    selected_indices = timeit(label="Psi selection")(psi_selection)(las_ucc_trial_cis)
 
-    start_time = time.perf_counter()
+    selected_psi = [las_ucc_trial_cis[i] for i in selected_indices]
 
-    for idx, psi in enumerate(las_ucc_trial_cis):
-        # Build S matrix for current selection + this CI
-        n_sel = len(selected_indices)
-        S_new = np.zeros((n_sel + 1, n_sel + 1), dtype=np.complex128)
-        # Fill previous block
-        if n_sel > 0:
-            S_new[:n_sel, :n_sel] = S_inc
-            for j, jidx in enumerate(selected_indices):
-                S_new[n_sel, j] = get_Sij(psi, las_ucc_trial_cis[jidx], h)
-                S_new[j, n_sel] = get_Sij(las_ucc_trial_cis[jidx], psi, h)
-        # Diagonal element
-        S_new[n_sel, n_sel] = get_Sij(psi, psi, h)
-        # Check condition number
-        cond = np.linalg.cond(S_new)
-        if cond < threshold:
-            selected_indices.append(idx)
-            S_inc = S_new
-        else:
-            if VERBOSE >= 1:
-                print(f"Discarding CI {idx} due to linear dependence (cond={cond:.2e})")
-
-    end_time = time.perf_counter()
-    elapsed = end_time - start_time
-    result['cond_decision_time_sec'] = elapsed
-    if VERBOSE >= 4:
-        print(f"cond decision runtime: {elapsed:.6f} s")
-
-    # Now, only keep selected CIs for S and H
-    nc_sel = len(selected_indices)
-    S = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
-    H = np.zeros((nc_sel, nc_sel), dtype=np.complex128)
-
-    start_time = time.perf_counter()
-    for i, idx_i in enumerate(selected_indices):
-        for j, idx_j in enumerate(selected_indices):
-            S[i, j], H[i, j] = get_Sij_Hij(las_ucc_trial_cis[idx_i], las_ucc_trial_cis[idx_j], h)
-    end_time = time.perf_counter()
-    elapsed = end_time - start_time
-    result['S_H_time_sec'] = elapsed
-    if VERBOSE >= 4:
-        print(f"S/H matrix construction runtime: {elapsed:.6f} s")
-
+    S, H = timeit(label="Construct SH matrix")(constructSH)(selected_psi, h)
 
     if VERBOSE >= 0:
         print(f"Selected {nc_sel} CIs out of {nc} total CIs")
@@ -225,61 +230,32 @@ def nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las,
         print("H matrix:")
         print_matrix(H)
 
-    # print("min_ci_eng: ", min_ci_eng)
-    eigvals, eigvecs = eigh(H, S)
-    return eigvals[0], eigvecs[0], min_ci_eng   # Take the lowest eigenvalue as the energy
+
+    eigvals, eigvecs = timeit(label="Solve generalized eigenvalue problem")(eigh)(H, S)
+    las_uscc_noci_eng = np.min(eigvals.real)
+    print(f"LAS-USCC-NOQE energy: {las_uscc_noci_eng:.17f}")
+    return 
 
 
 
 def test(mol_config, test_config, las, mol, mf):
-
-
     eps = test_config['epsilon']
-    # if test_config['factor'] is not None: # if there is factor then use factor to select epsilon
-    #     all_g_, g_sel_, a_idxs_all_, i_idxs_all_ = grad.get_grad_exact(las, 0)
-    #     sortg = np.sort(abs(all_g_))
-    #     n = len(all_g_)
-    #     thre_idx = int(np.floor(test_config['factor'] * n))
-    #     eps= sortg[-thre_idx]
     if test_config['factor'] is not None: # if there is factor then use factor to select epsilon
         g, gs, all_gen_indices_a, all_gen_indices_i = grad.get_grad_exact(las, epsilon=0.0)
         sortg = np.sort(abs(g))
         n = len(g)
         eps = sortg[ int(np.floor((test_config['factor'] *n)))]
 
-    all_g, g_sel, a_idxs_selected_all, i_idxs_selected_all = grad.get_grad_exact(las, eps)
+    all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, eps)
 
-    # if test_config['grad_test']:
-    #     result['all_g'] = all_g
-    result['all_g'] = all_g
-    result['g_sel'] = g_sel
-
-    a_idxs_selected_nn = []
-    i_idxs_selected_nn = []
-    
-    nn_g = []
-    if(test_config['nn']):
-        nn_g, a_idxs_selected_nn, i_idxs_selected_nn = get_nn_excitations(a_idxs_selected_all, i_idxs_selected_all, all_g, mol_config)
-        if test_config['grad_test']:
-            result['nn_g'] = nn_g
-
-    result['tot_excitation_count'] = len(a_idxs_selected_all)
-    result['excitation_count_nn'] = len(a_idxs_selected_nn)
+    if VERBOSE >= 1:
+        print("total excitation count: ", len(all_g))
+        print("selected excitation count: ", len(g_sel))
 
     #Computing energy through the LAS-UCC kernel using selected excitations
     #==========================================================================================
     
-    a_idxs_selected = None
-    i_idxs_selected = None
-
-    if test_config['nn']:
-        a_idxs_selected = a_idxs_selected_nn
-        i_idxs_selected = i_idxs_selected_nn
-    else:
-        a_idxs_selected = a_idxs_selected_all
-        i_idxs_selected = i_idxs_selected_all
-    
-    if VERBOSE >= 2:
+    if VERBOSE >= 4:
         print("All selected excitations:")
         print_excitations(a_idxs_selected, i_idxs_selected)
 
@@ -290,26 +266,19 @@ def test(mol_config, test_config, las, mol, mf):
     # easily hit the maximal memory limit
     mc_uscc.fcisolver.frozen = test_config['frozen'] if 'frozen' in test_config else None  
 
-    start_time = time.perf_counter()
-    mc_uscc.kernel(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
-    end_time = time.perf_counter()
-    elapsed = end_time - start_time
-    result['las_uscc_time_sec'] = elapsed
-    if VERBOSE >= 4:
-        print(f"LAS-USCCSD-VQE runtime: {elapsed:.6f} s")
+
+    timeit(label="LAS-USCC-VQE kernel")(mc_uscc.kernel)(ci0 = cilas2f(las.ci, mol_config['ncas'], mol_config['nelecas']))
 
     if not mc_uscc.converged:
         print('Warning: kernel hasn\'t converged')
     
-    if VERBOSE >= 1:
-        print("MC-USCC amplitudes: ", mc_uscc.fcisolver.psi.x)
+    if VERBOSE >= 4:
+        print("LAS-USCC-VQE amplitudes: ", mc_uscc.fcisolver.psi.x)
 
-    result['las_uscc_eng'] =  mc_uscc.e_tot 
+    print(f"LAS-USCCSD-VQE energy: {mc_uscc.e_tot:.17f}")
    
-    if test_config['noci_test']:
-        result['las_uscc_noci_eng'], result['las_uscc_noci_vec'], result['min_ci_eng'] = nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
-    
-    return result
+    nci_test(a_idxs_selected, i_idxs_selected, test_config, mol_config, mol,las, mc_uscc, mf)
+    return 
    
 
 
@@ -336,22 +305,23 @@ def batch_test(mol_config, test_configs):
     else:
         mf = scf.RHF(mol).run()
 
-    # Running LASSCF
-    #===================================
+
+    
     las = LASSCF(mf, mol_config['ncas'], mol_config['nelecas'], spin_sub=mol_config['spinsub'], ouput=None)
     mo_loc = las.localize_init_guess(mol_config['frag_atom_list'], mf.mo_coeff)
-    las.kernel(mo_loc)
+    
+    timeit(label="LASSCF kernel")(las.kernel)(mo_loc)
+
+    print(f"LASSCF energy: {las.e_tot:.17f}")
     
     ref = mcscf.CASCI(mf, sum(mol_config['ncas']), sum(mol_config['nelecas']))
     ref.mo_coeff = las.mo_coeff
-    ref.kernel() 
+    timeit(label="CASCI kernel")(ref.kernel)()
+    print(f"CASCI energy: {ref.e_tot:.17f}")
 
     for test_config in test_configs:
-        
-        result = test(mol_config, test_config, las, mol, mf)
-        results.append(result)
-    
-    return results, ref.e_tot, las.e_tot
+        test(mol_config, test_config, las, mol, mf)
+    return
 
 
 
@@ -408,30 +378,6 @@ if __name__ == "__main__":
         stil180xyz = f.read()       
 
 
-    # with open(data_dir + '/kremer/kremer-geometry.xyz', 'r', encoding='utf-8') as f:
-    #     kremer_xyz = f.read()
-
-    # kremer_basis = {
-    #     "Cr": "def2-tzvp",
-    #     "O": "def2-svp",
-    #     "N": "def2-svp",
-    #     "C": "def2-svp",
-    #     "H": "def2-svp",
-    # }
-
-    # kremer_def2 : MolConfig = {
-    #     'name' : 'kremer_def2',
-    #     'HF' : 'ROHF',
-    #     'xyz' : kremer_xyz,
-    #     'basis' : kremer_basis,
-    #     'symmetry' : False,
-    #     'charge' : 3,
-    #     'spin' : 6,
-    #     'ncas': [3,3],
-    #     'nelecas': [[3,0],[0,3]],
-    #     'spinsub': [4,4],
-    #     'frag_atom_list': [[0],[1]]
-    # }
 
     h4_sto3g : MolConfig = {
         'name': 'H4_STO3G',
@@ -650,29 +596,3 @@ if __name__ == "__main__":
     for mol_conf in mol_configs:
         print(f"Molecule {mol_conf['name']}: ")
         mol_results, ref_energy, las_energy = batch_test(mol_conf, nosi_tests)
-        
-        print(f"CASCI energy: {ref_energy:.17f}")
-        print(f"LASSCF energy: {las_energy:.17f}")
-        for result in mol_results:
-            print(f"Total excitations: {len(result['all_g'])}")
-            print(f"Selected excitations: {len(result['g_sel'])}")
-            
-            # print(f"NN excitations: {result['excitation_count_nn']}")
-
-            if 'las_uscc_eng' in result:
-                print(f"LAS-USCCSD-VQE energy: {result['las_uscc_eng']:.17f}")
-            if 'las_uscc_noci_eng' in result:
-                print(f"LAS-USCCSD-NOSI energy: {result['las_uscc_noci_eng']:.17f}")
-            # if 'tot_g' in result:
-            #     print(f"Total gradient norm: {np.linalg.norm(result['tot_g']):.17f}")
-            # if 'nn_g' in result:
-            #     print(f"NN gradient norm: {np.linalg.norm(result['nn_g']):.17f}")
-            if 'las_uscc_noci_vec' in result:
-                print("NOSI vector: ", result['las_uscc_noci_vec'])
-            if 'min_ci_eng' in result:
-                print(f"Minimum State energy: {result['min_ci_eng']:.17f}")
-            if 'amps' in result:
-                print("Amplitudes:\n", result['amps'])
-            print("\n")
-        
-        print("\n\n")

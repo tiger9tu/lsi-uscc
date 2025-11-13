@@ -9,10 +9,10 @@
 
 
 export OMP_NUM_THREADS=16
-source /home/tuy/repo/.venv/bin/activate
+source /project/lgagliardi/tuy/qchem/.venv/bin/activate
 
 
-python bench.py 5 >  bench.txt
+python new.py > new_res.txt
 # /usr/bin/time -v  python c4_631g_rand.py 0.5 >  c4_631g_result_rand05.txt
 # /usr/bin/time -v  python c4_631g_rand.py 1 >    c4_631g_result_rand1.txt
 # /usr/bin/time -v  python c4_631g_rand.py 2 >    c4_631g_result_rand2.txt
