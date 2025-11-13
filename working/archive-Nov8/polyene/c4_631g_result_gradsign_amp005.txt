@@ -1,3 +1,0 @@
-Using AMPLITUDE argument: 0.05
-Molecule C6_631G: 
-overwrite output file: c6_631g.out

@@ -1,2 +1,0 @@
-slurmstepd: error: Unable to create TMPDIR [/scratch/local/jobs/36562894]: Input/output error
-slurmstepd: error: Setting TMPDIR to /tmp
