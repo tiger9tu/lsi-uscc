@@ -1,10 +1,12 @@
 # run_tests.py
 
 from qtest.test_base import MyNOQIStudy, MolConfig
+import os
 
-
-with open('../geom/c4.xyz', 'r', encoding='utf-8') as f:
+pwd = os.path.dirname(os.path.abspath(__file__))
+with open(f'{pwd}/../geom/c4.xyz', 'r', encoding='utf-8') as f:
     c4xyz = f.read()
+
 
 c4 = MolConfig(
     name="C4_631G",
