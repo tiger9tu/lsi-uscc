@@ -322,7 +322,7 @@ class LASCCTest:
             print("=== Energies for selection ===\n")   
             a_idxs, i_idxs, meta = self.select_excitations(**kw)
             self.selection_records[label] = {"a_idxs": a_idxs, "i_idxs": i_idxs, "meta": meta}
-
+            
             mc_uscc, e_vqe = self.run_vqe(a_idxs, i_idxs)
             self.energies[label] = {
                 "RHF": self.energies["base"]["RHF"],
