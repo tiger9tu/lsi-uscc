@@ -64,7 +64,14 @@ i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
 mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = 1000)
 
 mc_uscc.fcisolver.norb_f = ncas_f
+
+# las_ci_complex = np.array(las.ci, dtype=complex)
 las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
-# Print numpy dtype if array-like, and also Python type of the first element
 mc_uscc.kernel(ci0=las_ci0_f)
-print("LASLCCSD energy: {:.9f}".format(mc_uscc.e_tot))
+print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
+
+
+# las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
+# # Print numpy dtype if array-like, and also Python type of the first element
+# mc_uscc.kernel(ci0=las_ci0_f)
+# print("LASLCCSD energy: {:.9f}".format(mc_uscc.e_tot))

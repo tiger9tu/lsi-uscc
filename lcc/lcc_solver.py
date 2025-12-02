@@ -121,7 +121,7 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         self.si = si.real
         ci = self.get_fcivec (si)
         self.ci = ci
-        return e_tot, ci
+        return e_tot, np.asarray(ci.real, dtype=np.float64)
 
 
 if __name__ == '__main__':

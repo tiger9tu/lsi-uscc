@@ -82,6 +82,7 @@ def print_list_matrix(obj, digits=3, _print_fn = print):
 
 def cilas2f(lasci, norb_f, nelec_f):
     """Convert LAS CI (per-fragment) to full Fock-space CI."""
+    
     ci_f = []
     for i, ci in enumerate(lasci):
         ci_f.append(fockspace.hilbert2fock(ci, norb_f[i], nelec_f[i])[0])
