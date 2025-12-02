@@ -1,0 +1,316 @@
+overwrite output file: c2h4n4_631g_las3_rscan.log
+LASSCF((4,4),(2,2),(4,4)) energy = -295.46390406589137
+CASCI(10,10) energy = -295.5242295338646
+ROW: 2.0 True -295.463904066 False -295.524229534
+CASCI E = -295.527473943825  E(CI) = -13.0814185067934  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.465268467899
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.4375672611307
+LAS-USCC-NOQI energy: -295.46849037537270988
+ROW: 3.5 True -295.466415933 False -295.527473944
+CASCI E = -295.527385045434  E(CI) = -13.1203003656012  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.465489284626
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.4672017675953
+LAS-USCC-NOQI energy: -295.46870895940844548
+ROW: 3.4 True -295.466327715 False -295.527385045
+CASCI E = -295.527291009049  E(CI) = -13.1606335045663  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.465780812691
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.5145524178408
+LAS-USCC-NOQI energy: -295.46899758053262985
+ROW: 3.3 True -295.466234386 False -295.527291009
+CASCI E = -295.527191268574  E(CI) = -13.2024860289692  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.466098407716
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.587459639922
+LAS-USCC-NOQI energy: -295.46931136254204375
+ROW: 3.2 True -295.466136167 False -295.527191269
+CASCI E = -295.527085315968  E(CI) = -13.2459126312398  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.466439491772
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.6979667348187
+LAS-USCC-NOQI energy: -295.46964747506416415
+ROW: 3.1 True -295.466033249 False -295.527085316
+CASCI E = -295.526972433573  E(CI) = -13.2910355576131  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.466791496449
+Selected 65 / 65 states after cond filter
+Condition number of S: 1669.8628295592425
+LAS-USCC-NOQI energy: -295.46999310875827405
+ROW: 3.0 True -295.465925666 False -295.526972434
+CASCI E = -295.526851207200  E(CI) = -13.3379321928026  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 64
+NOQI trial states (incl ref): 65; min single-state E: -295.467138959846
+Selected 65 / 65 states after cond filter
+Condition number of S: 1670.1056835093202
+LAS-USCC-NOQI energy: -295.47033247027411562
+ROW: 2.9 True -295.465813020 False -295.526851207
+CASCI E = -295.526718945733  E(CI) = -13.3867207341280  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 56
+NOQI trial states (incl ref): 57; min single-state E: -295.467439019128
+Selected 57 / 57 states after cond filter
+Condition number of S: 1168.3045623242888
+LAS-USCC-NOQI energy: -295.47062116453679437
+ROW: 2.8 True -295.465694173 False -295.526718946
+CASCI E = -295.526571627977  E(CI) = -13.4375338411483  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 56
+NOQI trial states (incl ref): 57; min single-state E: -295.467662737179
+Selected 57 / 57 states after cond filter
+Condition number of S: 1168.5180256252975
+LAS-USCC-NOQI energy: -295.47083207376908831
+ROW: 2.7 True -295.465566858 False -295.526571628
+CASCI E = -295.526402910364  E(CI) = -13.4905249503676  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 48
+NOQI trial states (incl ref): 49; min single-state E: -295.467768009863
+Selected 49 / 49 states after cond filter
+Condition number of S: 837.032016641282
+LAS-USCC-NOQI energy: -295.47092103777464445
+ROW: 2.6 True -295.465427278 False -295.526402910
+CASCI E = -295.526203641769  E(CI) = -13.5458140943595  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 48
+NOQI trial states (incl ref): 49; min single-state E: -295.467707334310
+Selected 49 / 49 states after cond filter
+Condition number of S: 837.2553628805999
+LAS-USCC-NOQI energy: -295.47084153430620290
+ROW: 2.5 True -295.465269787 False -295.526203642
+CASCI E = -295.525961624129  E(CI) = -13.6035850632244  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 48
+NOQI trial states (incl ref): 49; min single-state E: -295.467437756799
+Selected 49 / 49 states after cond filter
+Condition number of S: 837.5705002588354
+LAS-USCC-NOQI energy: -295.47054992221660541
+ROW: 2.4 True -295.465086826 False -295.525961624
+CASCI E = -295.525661379372  E(CI) = -13.6640278641796  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 48
+NOQI trial states (incl ref): 49; min single-state E: -295.466924212383
+Selected 49 / 49 states after cond filter
+Condition number of S: 838.0147666728798
+LAS-USCC-NOQI energy: -295.47001142659570405
+ROW: 2.3 True -295.464869130 False -295.525661379
+CASCI E = -295.525285071657  E(CI) = -13.7273907270351  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 44
+NOQI trial states (incl ref): 45; min single-state E: -295.466151767733
+Selected 45 / 45 states after cond filter
+Condition number of S: 539.5608350297384
+LAS-USCC-NOQI energy: -295.46919552715871760
+ROW: 2.2 True -295.464606343 False -295.525285072
+CASCI E = -295.524812013783  E(CI) = -13.7938702423081  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 44
+NOQI trial states (incl ref): 45; min single-state E: -295.465127510291
+Selected 45 / 45 states after cond filter
+Condition number of S: 539.6631564319424
+LAS-USCC-NOQI energy: -295.46814456214343636
+ROW: 2.1 True -295.464287876 False -295.524812014
+CASCI E = -295.524224461356  E(CI) = -13.8637611216288  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 44
+NOQI trial states (incl ref): 45; min single-state E: -295.463904070067
+Selected 45 / 45 states after cond filter
+Condition number of S: 539.8072977007628
+LAS-USCC-NOQI energy: -295.46689955037601294
+ROW: 2.0 True -295.463904070 False -295.524224461
+CASCI E = -295.523512296449  E(CI) = -13.9374331109610  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.462578049933
+Selected 41 / 41 states after cond filter
+Condition number of S: 404.9224133455538
+LAS-USCC-NOQI energy: -295.46556430397168924
+ROW: 1.9 True -295.463447176 False -295.523512296
+CASCI E = -295.522682070526  E(CI) = -14.0153492292882  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.461293472718
+Selected 41 / 41 states after cond filter
+Condition number of S: 405.42273129105536
+LAS-USCC-NOQI energy: -295.46430227332893992
+ROW: 1.8 True -295.462912172 False -295.522682071
+CASCI E = -295.521766389148  E(CI) = -14.0980408101738  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.460230918917
+Selected 41 / 41 states after cond filter
+Condition number of S: 406.1837450056713
+LAS-USCC-NOQI energy: -295.46332378048111877
+ROW: 1.7 True -295.462297790 True -295.521766389
+CASCI E = -295.520815669383  E(CI) = -14.1862840730744  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.459569198404
+Selected 41 / 41 states after cond filter
+Condition number of S: 407.36522881199994
+LAS-USCC-NOQI energy: -295.46286537127861038
+ROW: 1.6 True -295.461609128 True -295.520815669
+CASCI E = -295.519875793448  E(CI) = -14.2810072090882  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.459408732075
+Selected 41 / 41 states after cond filter
+Condition number of S: 409.2431100156629
+LAS-USCC-NOQI energy: -295.46313552207686826
+ROW: 1.5 True -295.460864761 True -295.519875793
+CASCI E = -295.518988245121  E(CI) = -14.3834561849364  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.459620728670
+Selected 41 / 41 states after cond filter
+Condition number of S: 412.30361721547416
+LAS-USCC-NOQI energy: -295.46420818205444903
+ROW: 1.4 True -295.460114030 True -295.518988245
+CASCI E = -295.518230762728  E(CI) = -14.4954908535553  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.459501111797
+Selected 41 / 41 states after cond filter
+Condition number of S: 417.4219247589892
+LAS-USCC-NOQI energy: -295.46575652425303815
+ROW: 1.3 True -295.459473722 True -295.518230763
+CASCI E = -295.517779586275  E(CI) = -14.6194857764414  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.457305080718
+Selected 41 / 41 states after cond filter
+Condition number of S: 426.14172691425824
+LAS-USCC-NOQI energy: -295.46670249466080804
+ROW: 1.2 True -295.459197957 True -295.517779586
+CASCI E = -295.517982787479  E(CI) = -14.7592030638764  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.449397794154
+Selected 41 / 41 states after cond filter
+Condition number of S: 441.03679885871946
+LAS-USCC-NOQI energy: -295.46444964403877975
+ROW: 1.1 True -295.459797823 True -295.517982787
+CASCI E = -295.519433822745  E(CI) = -14.9195883454000  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.429838517599
+Selected 41 / 41 states after cond filter
+Condition number of S: 465.64973171212455
+LAS-USCC-NOQI energy: -295.45420754465845903
+ROW: 1.0 True -295.462209205 True -295.519433823
+CASCI E = -295.522994842530  E(CI) = -15.1075290885557  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 44
+NOQI trial states (incl ref): 45; min single-state E: -295.391610551653
+Selected 45 / 45 states after cond filter
+Condition number of S: 553.7103077827201
+LAS-USCC-NOQI energy: -295.43131628083460782
+ROW: 0.9 True -295.467928308 True -295.522994843
+CASCI E = -295.529788959547  E(CI) = -15.3308399563102  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 44
+NOQI trial states (incl ref): 45; min single-state E: -295.332507866114
+Selected 45 / 45 states after cond filter
+Condition number of S: 690.6005085969686
+LAS-USCC-NOQI energy: -295.38932264780731884
+ROW: 0.8 True -295.478879586 True -295.529788960
+CASCI E = -295.541268359194  E(CI) = -15.5986085118812  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.260686019613
+Selected 41 / 41 states after cond filter
+Condition number of S: 371.0381004527636
+LAS-USCC-NOQI energy: -295.33465955719861995
+ROW: 0.7 True -295.496814540 True -295.541268359
+CASCI E = -295.559277258752  E(CI) = -15.9203328229807  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 40
+NOQI trial states (incl ref): 41; min single-state E: -295.192574370768
+Selected 41 / 41 states after cond filter
+Condition number of S: 218.1514081787129
+LAS-USCC-NOQI energy: -295.28832018622131272
+ROW: 0.6 True -295.522586561 True -295.559277259
+CASCI E = -295.585271433282  E(CI) = -16.3068145357432  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 34
+NOQI trial states (incl ref): 35; min single-state E: -295.142892919278
+Selected 35 / 35 states after cond filter
+Condition number of S: 11.468705916429165
+LAS-USCC-NOQI energy: -295.24903511949167978
+ROW: 0.5 True -295.555918877 True -295.585271433
+CASCI E = -295.618890642717  E(CI) = -16.7697474910987  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 34
+NOQI trial states (incl ref): 35; min single-state E: -295.120804605304
+Selected 35 / 35 states after cond filter
+Condition number of S: 8.27033952945932
+LAS-USCC-NOQI energy: -295.24335716496807436
+ROW: 0.4 True -295.595532081 True -295.618890643
+CASCI E = -295.657587436417  E(CI) = -17.3224968395037  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 34
+NOQI trial states (incl ref): 35; min single-state E: -295.131816936274
+Selected 35 / 35 states after cond filter
+Condition number of S: 6.24372648136939
+LAS-USCC-NOQI energy: -295.27005076068638800
+ROW: 0.3 True -295.638955351 True -295.657587436
+CASCI E = -295.696359550107  E(CI) = -17.9795502188880  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 30
+NOQI trial states (incl ref): 31; min single-state E: -295.182991826449
+Selected 31 / 31 states after cond filter
+Condition number of S: 4.287674469719311
+LAS-USCC-NOQI energy: -295.32262264371956917
+ROW: 0.2 True -295.681518563 True -295.696359550
+CASCI E = -295.725955266489  E(CI) = -18.7540839739248  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 26
+NOQI trial states (incl ref): 27; min single-state E: -295.290703236394
+Selected 27 / 27 states after cond filter
+Condition number of S: 3.175080889706844
+LAS-USCC-NOQI energy: -295.39588683990126583
+ROW: 0.1 True -295.714230143 True -295.725955266
+CASCI E = -295.729384942717  E(CI) = -19.6539942905095  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 26
+NOQI trial states (incl ref): 27; min single-state E: -295.493294264401
+Selected 27 / 27 states after cond filter
+Condition number of S: 2.9520226264539464
+LAS-USCC-NOQI energy: -295.59070745337714925
+ROW: -0.0 True -295.720264770 True -295.729384943
+CASCI E = -295.676429117994  E(CI) = -20.6806256646596  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 28
+NOQI trial states (incl ref): 29; min single-state E: -295.868842645488
+Selected 29 / 29 states after cond filter
+Condition number of S: 2.939853718641575
+LAS-USCC-NOQI energy: -296.00623961450270372
+ROW: -0.1 True -295.669498096 True -295.676429118
+CASCI E = -295.514732196751  E(CI) = -21.8245592209084  S^2 = -0.0000000
+total excitation count: 6688
+selected excitation count: 32
+NOQI trial states (incl ref): 33; min single-state E: -297.590923250967
+Selected 33 / 33 states after cond filter
+Condition number of S: 3.0983033788697543
+LAS-USCC-NOQI energy: -297.81863175186992976
+ROW: -0.2 True -295.509623455 True -295.514732197
+CASCI E = -295.154425003514  E(CI) = -23.0461962621371  S^2 = 0.0000000
+total excitation count: 6688
+selected excitation count: 32
+NOQI trial states (incl ref): 33; min single-state E: -298.449973986765
+Selected 33 / 33 states after cond filter
+Condition number of S: 3.046345451817178
+LAS-USCC-NOQI energy: -299.40864169386344429
+ROW: -0.3 True -295.150796122 True -295.154425004

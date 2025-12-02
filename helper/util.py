@@ -88,11 +88,17 @@ def cilas2f(lasci, norb_f, nelec_f):
     return ci_f
 
 
-def get_sorted_excitations(las, epsilon=0.0, fraction=None):
+def get_sorted_excitations(las, epsilon=0.0, fraction=None, verbose=0):
 
+    # select excitations based on fraction if provided
+    # if there are multiple excitations with the same gradient magnitude at the cutoff,
+    # all such excitations will be included
     if fraction is not None:
         g_all, _, _, _ = grad.get_grad_exact(las, epsilon=0.0)
+
         sortg = np.sort(np.abs(g_all))
+        if verbose > 2:
+            print("Total number of excitations:", len(g_all))
         n = len(sortg)
         k = int(np.floor(fraction * n))
         k = min(max(k, 1), n)
@@ -106,3 +112,4 @@ def get_sorted_excitations(las, epsilon=0.0, fraction=None):
 
     return a_idxs_selected, i_idxs_selected
         
+
