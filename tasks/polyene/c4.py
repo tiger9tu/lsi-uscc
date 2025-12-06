@@ -41,6 +41,7 @@ las = LASSCF (mf, ncas_f, nelecas_f, spin_sub=spin_sub_f, verbose=verbose)
 mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
 las.kernel (mo_loc)
 print ("LASSCF energy = ", las.e_tot)
+las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 
 
 # all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon)
@@ -53,7 +54,7 @@ mc_uscc.mo_coeff = las.mo_coeff
 lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
 mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
 mc_uscc.fcisolver.norb_f = ncas_f
-mc_uscc.kernel()
+mc_uscc.kernel(ci0=las_ci0_f)
 print("Fraction: {:.9f} | Number of parameters: {:.0f} | LASUSCCSD-VQE energy: {:.9f}".format(fraction, len(a_idxs_selected), mc_uscc.e_tot))
 
 
@@ -66,7 +67,7 @@ mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = 1000
 mc_uscc.fcisolver.norb_f = ncas_f
 
 # las_ci_complex = np.array(las.ci, dtype=complex)
-las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
+
 mc_uscc.kernel(ci0=las_ci0_f)
 print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
 

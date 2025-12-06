@@ -70,7 +70,7 @@ print (si_hand[:,0])
 lsirdm1s, lsirdm2s = lsi.make_casdm12s ()
 lsi_ground_rdm1s = lsirdm1s[0]
 lsi_ground_rdm2s = util.lassi_rdm2_to_lasscf (lsirdm2s[0])
-g_sel, grad_all, a_idxs_selected, i_idxs_selected = grad.get_grad_exact_rdm12 (las2, lsi_ground_rdm1s, lsi_ground_rdm2s, epsilon=0.001)
+g_sel, grad_all, a_idxs_selected, i_idxs_selected = grad.get_grad_exact_rdm12 (las2, lsi_ground_rdm1s, lsi_ground_rdm2s, epsilon=0.0)
 a_idxs, i_idxs = util.get_sorted_excitations (a_idxs_selected, i_idxs_selected, g_sel, fraction = 0.01, verbose=3)
 
 

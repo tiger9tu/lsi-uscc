@@ -38,13 +38,12 @@ las.verbose = 4
 mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
 las.kernel (mo_loc)
 print ("LASSCF energy = ", las.e_tot)
-
+las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 #Getting gradient for all cluster excitations through LAS-UCCSD gradients, may use your desired epsilon for selection
 #====================================================================================================================
 
 epsilon = 0.001
 all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon)
-# print("g_sel = ", g_sel)
 # sort the selected excitations by gradiDent magnitude
 gredients = np.array(g_sel)[:,0]
 sorted_indices = np.argsort(-np.abs(gredients))
@@ -60,7 +59,7 @@ mc_uscc.mo_coeff = las.mo_coeff
 lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
 mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
 mc_uscc.fcisolver.norb_f = [2,2]
-mc_uscc.kernel()
+mc_uscc.kernel(ci0=las_ci0_f)
 print("Epsilon: {:.9f} | Number of parameters: {:.0f} | LASUSCCSD energy: {:.9f}".format(epsilon, len(a_idxs_selected), mc_uscc.e_tot))
 
 # print("a_idxs_selected = ", a_idxs_selected)
@@ -74,6 +73,9 @@ i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
 mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = 1000)
 
 mc_uscc.fcisolver.norb_f = ncas_f
-las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
+
 mc_uscc.kernel(ci0=las_ci0_f)
 print("LASLCCSD energy: {:.9f}".format(mc_uscc.e_tot))
+
+# c = mc_uscc.fcisolver.psi0.dp_ci (las_ci0_f)
+# print("norm c = ", np.linalg.norm(c))
