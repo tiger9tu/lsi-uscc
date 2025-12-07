@@ -9,8 +9,8 @@ from c2h4n4_struct import structure as struct
 
 # Using LASSI[r,q]
 
-r = 1
-q = 1
+r = 3
+q = 3
 
 mol = struct (0, 0, '6-31g')
 mol.output = 'c2h4n4_lassirq_631g.log'
@@ -43,4 +43,6 @@ molden.from_lassi (las, 'c2h4n4_lassirq_631g.molden', si=si_rq)
 
 print ("SI vector (LASSI[{},{}]):".format (r,q))
 print (si_rq[:,0])
+
+print ("SI length (LASSI[{},{}]):".format (r,q), len (si_rq[:,0]))
 
