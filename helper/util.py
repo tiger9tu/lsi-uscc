@@ -111,8 +111,9 @@ def get_sorted_excitations(a_idxs, i_idxs, g, epsilon=0.0, fraction = None, verb
 
     a_idxs_selected = [a_idxs[selected_indices[i]] for i in sorted_indices]
     i_idxs_selected = [i_idxs[selected_indices[i]] for i in sorted_indices]
+    g_selected = [gredients[selected_indices[i]] for i in sorted_indices]
 
-    return a_idxs_selected, i_idxs_selected
+    return a_idxs_selected, i_idxs_selected, g_selected
 
 
 def lassi_rdm2_to_lasscf(rdm2s_lassi):
