@@ -85,10 +85,9 @@ print (si_hand[:,0])
 lsirdm1s, lsirdm2s = lsi.make_casdm12s ()
 lsi_ground_rdm1s = lsirdm1s[0]
 lsi_ground_rdm2s = util.lassi_rdm2_to_lasscf (lsirdm2s[0])
-g_sel, grad_all, a_idxs_selected, i_idxs_selected = grad.get_grad_exact_rdm12 (las2, lsi_ground_rdm1s, lsi_ground_rdm2s, epsilon=0.0)
-a_idxs, i_idxs, g = util.get_sorted_excitations (a_idxs_selected, i_idxs_selected, g_sel, fraction = 0.06, verbose=3)
+g_sel, grad_all, a_idxs, i_idxs = grad.get_grad_exact_rdm12 (las2, lsi_ground_rdm1s, lsi_ground_rdm2s, epsilon=0.0)
 
-
+# The g_sel is not correct, let's use numerical gradients instead
 mc_uscc =  mcscf.CASCI (mf, 6, 6)
 mc_uscc.mo_coeff = las2.mo_coeff
 lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
@@ -116,46 +115,6 @@ h1eff, e_core = mc_uscc.get_h1eff (mc_uscc.mo_coeff)
 h2eff = mc_uscc.get_h2eff (mc_uscc.mo_coeff)
 h = [e_core, h1eff, h2eff]
 
-# first let's confirm that we get the same energy as LASSI 
-# for working in psi
-
-# def energy_tot (self, x, h, uc=None, huc=None):
-#     log = self.log
-#     norm_x = linalg.norm (x)
-#     t0 = (time.process_time (), time.time ())
-#     if (uc is None) or (huc is None):
-#         uc, huc = self.hc_x (x, h)[1:3]
-#     uc, huc = uc.ravel (), huc.ravel ()
-#     cu = uc.conj ()
-#     cuuc = cu.dot (uc)
-#     cuhuc = cu.dot (huc)
-#     e_tot = cuhuc/cuuc
-#     log.timer ('las_obj energy eval', *t0)
-#     log.debug ('energy value = %f, norm value = %e, |x| = %e', e_tot, cuuc, norm_x)
-#     if log.verbose > lib.logger.DEBUG: self.check_x_change (x, e_tot0=e_tot)
-#     self._e_last = e_tot
-#     return e_tot
-
-
-# def hc_x (self, x, h):
-#     xconstr, xcc, xci = self.unpack (x)
-#     self.uop.set_uniq_amps_(xcc)
-#     h = self.constr_h (xconstr, h)
-#     c_f = self.rotate_ci0 (xci)
-#     c = self.dp_ci (c_f)
-#     uc = self.uop (c)
-#     # print("c = \n", c)
-#     # print("uc = \n", uc)
-#     # diff_norm = linalg.norm(c - uc)
-#     # print("norm(c - uc) =", diff_norm)
-#     huc = self.contract_h2 (h, uc)
-#     uhuc = self.uop (huc, transpose=True)
-#     return c, uc, huc, uhuc, c_f
-
-# now let's get the gradients
-
-
-
 
 lsiS = np.zeros((n,n), dtype=complex)
 lsiH = np.zeros((n,n), dtype=complex)
@@ -179,10 +138,9 @@ print("Ground state coefficient vector from psi basis:")
 print(e_vecs_lsi[:,0])
 
 
-t = 10
-dx = 1e-3 # step size for numerical gradient
+dx = 1e-5 # step size for numerical gradient
 my_gs = []
-for i in range(t):
+for i in range(len(a_idxs)):
     uics = []
     huics = []
 
@@ -194,121 +152,123 @@ for i in range(t):
         psi = fci.build_psi (las_ci_fs[j], 6, (3,3), 6)
         psi.x[psi.nconstr + i] = dx
         c, uc, huc, uhuc, c_f = psi.hc_x (psi.x, h)
-        uics.append(uc)
-        huics.append(huc)
+        uics.append(uc.ravel())
+        huics.append(huc.ravel())
 
         psi.x[psi.nconstr + i] = -dx
         cneg, ucneg, hucneg, uhucneg, c_fneg = psi.hc_x (psi.x, h)
-        uicsneg.append(ucneg)
-        huicsneg.append(hucneg)
+        uicsneg.append(ucneg.ravel())
+        huicsneg.append(hucneg.ravel())
 
     uiclsi = sum(e_vecs_lsi[i, 0] * uics[i] for i in range(n))
     huiclsi = sum(e_vecs_lsi[i, 0] * huics[i] for i in range(n))    
-    e_dx = (uiclsi.conj().dot(huiclsi) / uiclsi.conj().dot(uiclsi) - e_vals_lsi[0])
+    e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals_lsi[0]
 
     uiclsineg = sum(e_vecs_lsi[i, 0] * uicsneg[i] for i in range(n))
     huiclsineg = sum(e_vecs_lsi[i, 0] * huicsneg[i] for i in range(n))
-    e_dx_neg = (uiclsineg.conj().dot(huiclsineg) / uiclsineg.conj().dot(uiclsineg) - e_vals_lsi[0])
-    print("Numerical gradient step ", i, " : pos", e_dx.real / dx, " neg", e_dx_neg.real / dx, " compared to analytical ", g[i])
+    e_dx_neg = (uiclsineg.conj().dot(huiclsineg)) / (uiclsineg.conj().dot(uiclsineg)) - e_vals_lsi[0]
+    # print("Numerical gradient step ", i, " : pos", e_dx.real / dx, " neg", e_dx_neg.real / dx, " g ", (e_dx - e_dx_neg) / (2 * dx), " compared to analytical ", g[i])
     my_gs.append(e_dx.real)
 
+a_idxs_selected, i_idxs_selected, g = util.get_sorted_excitations (a_idxs, i_idxs, my_gs, fraction = 0.01, verbose=3)
 
-# # confirmed.
-# # Now let's approch the CASCI limit by including the lcc of each las state
-# psis = []
 
-# m = len(a_idxs)
-# print("Number of single excitations included: ", m)
+# confirmed.
+# Now let's approch the CASCI limit by including the lcc of each las state
+psis = []
 
-# # include the initial las states as well
+m = len(a_idxs)
+print("Number of single excitations included: ", m)
+
+# include the initial las states as well
+for i in range(n):
+    a_idx = a_idxs[j]
+    i_idx = i_idxs[j]
+    psi = fci.build_psi (las_ci_fs[i], 6, (3,3), 6)
+    psis.append(psi)
+
 # for i in range(n):
-#     a_idx = a_idxs[j]
-#     i_idx = i_idxs[j]
-#     psi = fci.build_psi (las_ci_fs[i], 6, (3,3), 6)
-#     psis.append(psi)
-
-# # for i in range(n):
-# #     for j in range(m):
-# #         a_idx = a_idxs[j]
-# #         i_idx = i_idxs[j]
-# #         psi = fci.build_psi (las_ci_fs[i], 6, (3,3), 6)
-# #         psi.x[psi.nconstr + j] = np.pi / 2
-# #         psis.append(psi)
-
-# for j in range(m):
-#     for i in range(n):
+#     for j in range(m):
 #         a_idx = a_idxs[j]
 #         i_idx = i_idxs[j]
 #         psi = fci.build_psi (las_ci_fs[i], 6, (3,3), 6)
 #         psi.x[psi.nconstr + j] = np.pi / 2
 #         psis.append(psi)
 
-
-# n2 = len (psis)
-# S = np.zeros ((n2,n2), dtype=complex)
-# H = np.zeros ((n2,n2), dtype=complex)
-# for i in range(n2):
-#     for j in range(n2):
-#         S[i,j], H[i,j] = get_Sij_Hij (psis[i], psis[j], h)
-# print("Overlap matrix S with LCC:")
-# util.print_list_matrix (S , digits=4)
-# print("Hamiltonian matrix H with LCC:")
-# util.print_list_matrix (H , digits=4)
-# e_vals, e_vecs = linalg.eig (H, S)
-# idx = e_vals.argsort ()
-# e_vals = e_vals[idx]
-# e_vecs = e_vecs[:,idx]
-# print("Diagonalized LASSI energies with LCC:")
-# print("State {:.0f} energy = {:.9f}".format(0, e_vals[0].real))
-
-# cond_S = np.linalg.cond(S)
-# print("Condition number of S:", cond_S)
-# print("Ground state coefficient vector:")
-# print(e_vecs[:,0])
-
-# # now we filter the psis based on condition number of S
-# select_idx = select_psi (S, cond_thresh=8e5)
-# print("Selected indices after filtering based on condition number:")
-# print(select_idx)
-# S_selected = S[np.ix_(select_idx, select_idx)]
-# H_selected = H[np.ix_(select_idx, select_idx)]
-# e_vals_selected, e_vecs_selected = linalg.eig(H_selected, S_selected)
-# idx_selected = e_vals_selected.argsort()
-# e_vals_selected = e_vals_selected[idx_selected]
-# e_vecs_selected = e_vecs_selected[:, idx_selected]
-# print("Ground state energy (selected): {:.9f}".format(e_vals_selected[0].real))
-# print("Ground state coefficients (selected):")
-# print(e_vecs_selected[:, 0])
+for j in range(m):
+    for i in range(n):
+        a_idx = a_idxs[j]
+        i_idx = i_idxs[j]
+        psi = fci.build_psi (las_ci_fs[i], 6, (3,3), 6)
+        psi.x[psi.nconstr + j] = np.pi / 2
+        psis.append(psi)
 
 
-# # diagonalize in the Oi |lsi> basis
-# # using the H and S matrices 
-# Holsi = np.zeros((m+1,m+1), dtype=complex)
-# Solsi = np.zeros((m+1,m+1), dtype=complex)
-# for i in range(m+1):
-#     for j in range(m+1):
-#         Hoij = 0
-#         Soij = 0
-#         for k in range(n):
-#             for l in range(n):
-#                 coeff_k = e_vecs_lsi[k,0]
-#                 coeff_l = e_vecs_lsi[l,0]
-#                 Hoij += coeff_k.conj () * coeff_l * H[k + i*n, l + j*n]
-#                 Soij += coeff_k.conj () * coeff_l * S[k + i*n, l + j*n]
+n2 = len (psis)
+S = np.zeros ((n2,n2), dtype=complex)
+H = np.zeros ((n2,n2), dtype=complex)
+for i in range(n2):
+    for j in range(n2):
+        S[i,j], H[i,j] = get_Sij_Hij (psis[i], psis[j], h)
+print("Overlap matrix S with LCC:")
+util.print_list_matrix (S , digits=4)
+print("Hamiltonian matrix H with LCC:")
+util.print_list_matrix (H , digits=4)
+e_vals, e_vecs = linalg.eig (H, S)
+idx = e_vals.argsort ()
+e_vals = e_vals[idx]
+e_vecs = e_vecs[:,idx]
+print("Diagonalized LASSI energies with LCC:")
+print("State {:.0f} energy = {:.9f}".format(0, e_vals[0].real))
 
-#         Holsi[i,j] = Hoij
-#         Solsi[i,j] = Soij    
+cond_S = np.linalg.cond(S)
+print("Condition number of S:", cond_S)
+print("Ground state coefficient vector:")
+print(e_vecs[:,0])
+
+# now we filter the psis based on condition number of S
+select_idx = select_psi (S, cond_thresh=8e5)
+print("Selected indices after filtering based on condition number:")
+print(select_idx)
+S_selected = S[np.ix_(select_idx, select_idx)]
+H_selected = H[np.ix_(select_idx, select_idx)]
+e_vals_selected, e_vecs_selected = linalg.eig(H_selected, S_selected)
+idx_selected = e_vals_selected.argsort()
+e_vals_selected = e_vals_selected[idx_selected]
+e_vecs_selected = e_vecs_selected[:, idx_selected]
+print("Ground state energy (selected): {:.9f}".format(e_vals_selected[0].real))
+print("Ground state coefficients (selected):")
+print(e_vecs_selected[:, 0])
 
 
-# print("Hosi: ")
-# util.print_list_matrix (Holsi , digits=4)
-# print("Sosi: ")
-# util.print_list_matrix (Solsi , digits=4)
+# diagonalize in the Oi |lsi> basis
+# using the H and S matrices 
+Holsi = np.zeros((m+1,m+1), dtype=complex)
+Solsi = np.zeros((m+1,m+1), dtype=complex)
+for i in range(m+1):
+    for j in range(m+1):
+        Hoij = 0
+        Soij = 0
+        for k in range(n):
+            for l in range(n):
+                coeff_k = e_vecs_lsi[k,0]
+                coeff_l = e_vecs_lsi[l,0]
+                Hoij += coeff_k.conj () * coeff_l * H[k + i*n, l + j*n]
+                Soij += coeff_k.conj () * coeff_l * S[k + i*n, l + j*n]
 
-# e_vals_olsi, e_vecs_olsi = linalg.eig(Holsi, Solsi)
-# idx_olsi = e_vals_olsi.argsort()
-# e_vals_olsi = e_vals_olsi[idx_olsi]
-# e_vecs_olsi = e_vecs_olsi[:, idx_olsi]
-# print("Ground state energy (Olsi basis): {:.9f}".format(e_vals_olsi[0].real))
-# print("Ground state coefficients (Olsi basis):")
-# print(e_vecs_olsi[:, 0])
+        Holsi[i,j] = Hoij
+        Solsi[i,j] = Soij    
+
+
+print("Hosi: ")
+util.print_list_matrix (Holsi , digits=4)
+print("Sosi: ")
+util.print_list_matrix (Solsi , digits=4)
+
+e_vals_olsi, e_vecs_olsi = linalg.eig(Holsi, Solsi)
+idx_olsi = e_vals_olsi.argsort()
+e_vals_olsi = e_vals_olsi[idx_olsi]
+e_vecs_olsi = e_vecs_olsi[:, idx_olsi]
+print("Ground state energy (Olsi basis): {:.9f}".format(e_vals_olsi[0].real))
+print("Ground state coefficients (Olsi basis):")
+print(e_vecs_olsi[:, 0])
