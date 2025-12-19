@@ -113,6 +113,9 @@ def get_sorted_excitations(a_idxs, i_idxs, g, epsilon=0.0, fraction = None, verb
     i_idxs_selected = [i_idxs[selected_indices[i]] for i in sorted_indices]
     g_selected = [gredients[selected_indices[i]] for i in sorted_indices]
 
+    # Debug print
+    print("sorted indices:", sorted_indices)
+
     return a_idxs_selected, i_idxs_selected, g_selected
 
 

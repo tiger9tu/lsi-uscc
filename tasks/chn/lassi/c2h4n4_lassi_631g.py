@@ -170,7 +170,7 @@ for i in range(len(a_idxs)):
     # print("Numerical gradient step ", i, " : pos", e_dx.real / dx, " neg", e_dx_neg.real / dx, " g ", (e_dx - e_dx_neg) / (2 * dx), " compared to analytical ", g[i])
     my_gs.append(e_dx.real)
 
-a_idxs_selected, i_idxs_selected, g = util.get_sorted_excitations (a_idxs, i_idxs, my_gs, fraction = 0.01, verbose=3)
+a_idxs_selected, i_idxs_selected, g = util.get_sorted_excitations (a_idxs, i_idxs, my_gs, fraction = 0.08, verbose=3)
 
 
 # confirmed.
