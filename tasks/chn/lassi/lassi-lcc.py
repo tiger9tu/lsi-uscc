@@ -229,7 +229,7 @@ start = time.time()
 for i in range(m+1):
     for j in range(i, m+1):
         Sij = fci_oilsis[i].conj().dot(fci_oilsis[j])
-        Hij = fci_oilsis[i].conj().dot(fci_hoilsis[j])
+        Hij = fci_oilsis[i].conj().dot(fci_hoilsis[j]) / (uiclsi.conj().dot(uiclsi)).real
         Solsi[i,j] = Sij
         Holsi[i,j] = Hij
         if i != j:
