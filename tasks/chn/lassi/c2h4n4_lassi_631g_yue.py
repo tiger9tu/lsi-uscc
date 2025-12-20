@@ -145,42 +145,46 @@ print(e_vecs_lsi[:,0])
 
 
 dx = 1e-5 # step size for numerical gradient
-my_gs = []
+
 t = 10
 print("len a_idxs ", len(a_idxs))
 
 start = time.time()
 
-for i in range(len(a_idxs)):
-    uics = []
-    huics = []
+def get_numerical_gradients(a_idxs, i_idxs, las_ci_fs, coeffs, e0, h, dx):
+    my_gs = []
+    for i in range(len(a_idxs)):
+        uics = []
+        huics = []
 
-    uicsneg = []
-    huicsneg = []
-    a_idx = a_idxs[i]
-    i_idx = i_idxs[i]
-    for j in range(n):
-        psi = fci.build_psi (las_ci_fs[j], 6, (3,3), 6)
-        psi.x[psi.nconstr + i] = dx
-        c, uc, huc, uhuc, c_f = psi.hc_x (psi.x, h)
-        uics.append(uc.ravel())
-        huics.append(huc.ravel())
+        uicsneg = []
+        huicsneg = []
+        a_idx = a_idxs[i]
+        i_idx = i_idxs[i]
+        for j in range(n):
+            psi = fci.build_psi (las_ci_fs[j], 6, (3,3), 6)
+            psi.x[psi.nconstr + i] = dx
+            c, uc, huc, uhuc, c_f = psi.hc_x (psi.x, h)
+            uics.append(uc.ravel())
+            huics.append(huc.ravel())
 
-        psi.x[psi.nconstr + i] = -dx
-        cneg, ucneg, hucneg, uhucneg, c_fneg = psi.hc_x (psi.x, h)
-        uicsneg.append(ucneg.ravel())
-        huicsneg.append(hucneg.ravel())
+            psi.x[psi.nconstr + i] = -dx
+            cneg, ucneg, hucneg, uhucneg, c_fneg = psi.hc_x (psi.x, h)
+            uicsneg.append(ucneg.ravel())
+            huicsneg.append(hucneg.ravel())
 
-    uiclsi = sum(e_vecs_lsi[i, 0] * uics[i] for i in range(n))
-    huiclsi = sum(e_vecs_lsi[i, 0] * huics[i] for i in range(n))    
-    e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals_lsi[0]
+        uiclsi = sum(e_vecs_lsi[i, 0] * uics[i] for i in range(n))
+        huiclsi = sum(e_vecs_lsi[i, 0] * huics[i] for i in range(n))    
+        e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals_lsi[0]
 
-    uiclsineg = sum(e_vecs_lsi[i, 0] * uicsneg[i] for i in range(n))
-    huiclsineg = sum(e_vecs_lsi[i, 0] * huicsneg[i] for i in range(n))
-    e_dx_neg = (uiclsineg.conj().dot(huiclsineg)) / (uiclsineg.conj().dot(uiclsineg)) - e_vals_lsi[0]
-    # print("Numerical gradient step ", i, " : pos", e_dx.real / dx, " neg", e_dx_neg.real / dx, " g ", (e_dx - e_dx_neg) / (2 * dx), " compared to analytical ", g[i])
-    my_gs.append(e_dx.real)
+        uiclsineg = sum(e_vecs_lsi[i, 0] * uicsneg[i] for i in range(n))
+        huiclsineg = sum(e_vecs_lsi[i, 0] * huicsneg[i] for i in range(n))
+        e_dx_neg = (uiclsineg.conj().dot(huiclsineg)) / (uiclsineg.conj().dot(uiclsineg)) - e_vals_lsi[0]
+        # print("Numerical gradient step ", i, " : pos", e_dx.real / dx, " neg", e_dx_neg.real / dx, " g ", (e_dx - e_dx_neg) / (2 * dx), " compared to analytical ", g[i])
+        my_gs.append(e_dx.real)
+    return my_gs
 
+my_gs = get_numerical_gradients (a_idxs, i_idxs, las_ci_fs, e_vecs_lsi[:,0], e_vals_lsi[0], h, dx)
 
 end = time.time()
 print("time for evaluating ", t , " gradients is ", end - start, " seconds")
