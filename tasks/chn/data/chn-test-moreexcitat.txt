@@ -1,5 +1,0 @@
-overwrite output file: c2h4n4_631g_las3_rscan.log
-LASSCF((4,4),(2,2),(4,4)) energy = -295.4639040658917
-CASCI(10,10) energy = -295.5242295335914
-ROW: 2.0 True -295.463904066 False -295.524229534
-CASCI E = -295.527473943601  E(CI) = -13.0814185065698  S^2 = 0.0000000
