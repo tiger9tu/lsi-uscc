@@ -25,8 +25,10 @@ frac = 0.03
 ncas_f = (3,3)
 nelecas_f = ((2,1),(1,2))
 nelecas = tuple(sum(x) for x in zip(*nelecas_f))
-dnn0 = float(sys.argv[1])
-dnn1 = float(sys.argv[2])
+# dnn0 = float(sys.argv[1])
+# dnn1 = float(sys.argv[2])
+dnn0 = 2.0
+dnn1 = 2.0
 
 grad_path = pwd / 'data' / 'lcc_grad_cas6r1q2.txt'
 

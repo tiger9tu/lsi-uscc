@@ -18,9 +18,8 @@ pwd = Path(__file__).resolve().parent
 VERBOSE = 1
 # Using LASSI[r,q]
 
-dnn0 = float(sys.argv[1])
-dnn1 = float(sys.argv[2])
-
+dnn0 = 2.0
+dnn1 = 2.0
 r = 1
 q = 2
 frac = 0.01
@@ -51,6 +50,7 @@ mo_coeff = las.mo_coeff
 
 mc = mcscf.CASCI (mf, sum(ncas_f), nelecas).set (fcisolver=csf_solver(mol,smult=1)) # for 
 mc.kernel (mo_coeff)
+sys.stderr.flush ()
 molden.from_mcscf (mc, pwd / 'data' / 'c2h4n4_casscf66_631g.molden', cas_natorb=True)
 
 sys.stderr.flush ()
