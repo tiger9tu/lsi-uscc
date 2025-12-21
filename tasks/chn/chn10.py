@@ -13,45 +13,49 @@ import time
 from itertools import product
 from helper import util
 from lcc.lcc_solver import FCISolver_CC
-import ast
-import sys
+import ast, sys
 pwd = Path(__file__).resolve().parent
 VERBOSE = 1
 # Using LASSI[r,q]
 
-r = 1
-q = 2
-frac = 0.03
-ncas_f = (3,3)
-nelecas_f = ((2,1),(1,2))
-nelecas = tuple(sum(x) for x in zip(*nelecas_f))
 dnn0 = float(sys.argv[1])
 dnn1 = float(sys.argv[2])
+
+r = 1
+q = 2
+frac = 0.01
+ncas_f = (4,2,4)
+nelecas_f = ((2,2),(1,1),(2,2))
+nelecas = tuple(sum(x) for x in zip(*nelecas_f))
+spin_sub=(1,1,1)
+frag_atom_list = [[0,1,2],[3,4,5,6],[7,8,9]]
 
 grad_path = pwd / 'data' / 'lcc_grad_cas6r1q2.txt'
 
 mol = struct (dnn0, dnn1, '6-31g')
+mol.spin = 8
 mol.output = pwd / 'data' / 'c2h4n4_lassirq_631g.log'
 mol.verbose = lib.logger.INFO
 mol.build ()
 mf = scf.RHF (mol).run ()
 
-las = LASSCF (mf, ncas_f, nelecas_f)
+las = LASSCF (mf, ncas_f, nelecas_f, spin_sub=spin_sub)
+mo_coeff = las.localize_init_guess ([[0,1,2],[3,4,5,6],[7,8,9]])
 las = las.state_average ([0.5,0.5],
     spins=[[1,-1],[-1,1]],
     smults=[[2,2],[2,2]],    
     charges=[[0,0],[0,0]])
-mo = las.sort_mo ([16,18,22,23,24,26])
-mo = las.localize_init_guess ((list (range (5)), list (range (5,10))), mo)
-las.kernel (mo)
+las.kernel (mo_coeff)
 molden.from_lasscf (las, pwd / 'data' / 'c2h4n4_lasscf66_631g.molden')
+mo_coeff = las.mo_coeff
 
-mc = mcscf.CASCI (mf, 6, 6).set (fcisolver=csf_solver(mol,smult=1))
-mc.kernel (las.mo_coeff)
+mc = mcscf.CASCI (mf, sum(ncas_f), nelecas).set (fcisolver=csf_solver(mol,smult=1)) # for 
+mc.kernel (mo_coeff)
 molden.from_mcscf (mc, pwd / 'data' / 'c2h4n4_casscf66_631g.molden', cas_natorb=True)
 
-print ("LASSCF((3,3),(3,3)) energy =", las.e_tot)
-print ("CASCI(6,6) energy =", mc.e_tot)
+sys.stderr.flush ()
+print (f"LASSCF{ncas_f}, {spin_sub} energy =", las.e_tot)
+print (f"CASCI{(sum(ncas_f), nelecas)} energy =", mc.e_tot, flush=True)
 
 lsi = lassi.LASSIrq(las,r=r,q=q)
 e_roots, si_rq = lsi.kernel()
@@ -107,7 +111,7 @@ h = [e_core, h1eff, h2eff]
 
 las_psis = []
 for las_ci_f in lasci_fs:
-    las_psis.append(fci.build_psi (las_ci_f, np.sum(ncas_f), ncas_f, nelecas))
+    las_psis.append(fci.build_psi (las_ci_f, np.sum(ncas_f), ncas_f, nelecas_f))
 
 n = len(las_psis)
 lsiS = np.zeros((n,n), dtype=complex)
@@ -154,9 +158,7 @@ if VERBOSE > 3:
 
 try:
     with grad_path.open('r') as f:
-        s = f.read()
-        s = s.replace("np.float64(", "").replace(")", "")
-        grads = ast.literal_eval(s)
+        grads = ast.literal_eval(f.read())
 except FileNotFoundError:
     grads = None
 
@@ -211,6 +213,7 @@ mc_uscc.kernel()
 print("LSILCCSD energy: {:.9f}".format(mc_uscc.e_tot))
 print("lccsi vector: ")
 print(mc_uscc.fcisolver.lccsi.real)
+
 
 
 

@@ -1,0 +1,18 @@
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+LASSCF((3,3),(3,3)) energy = -294.988354919661
+CASCI(6,6) energy = -294.9899945501192
+LASSI[1,2]energy = -294.9894311161154
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+time for building H and S matrices of size 56 in psi basis:  157.73172450065613  seconds
+Selected top 8 excitations indices for LCC: 
+ [ 38 544  39 545 405 306 404 307]
+LSILCCSD energy: -294.989478009
+lccsi vector: 
+[ 9.99981776e-01 -1.70338224e-05  4.30942946e-03  3.01126090e-06
+ -4.22752082e-03 -2.01157337e-05 -2.96375098e-05 -6.74540928e-06
+ -6.24953771e-05]
