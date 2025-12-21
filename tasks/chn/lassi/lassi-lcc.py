@@ -86,7 +86,7 @@ nroots = len(lsi.ci[0])
 nfrag = len(lsi.ci)
 
 from itertools import product
-nroots = 3 # for testing
+# nroots = 3 # for testing
 for root in range(nroots):
     nelecs = []
     norbs = []
@@ -181,7 +181,9 @@ for i in range(len(a_idxs)):
 
 end = time.time()
 print("time for evaluating ", len(a_idxs) , " gradients is ", end - start, " seconds")
-
+print("Gradients: ")
+print(grads)
+print()
 # now we obtain the fci vectors for Oi |lsi> for the selected excitations
 grad_ordered_indices = np.argsort(grads)[::-1]
 n_select = max(1, int(np.ceil(len(a_idxs) * frac)))
@@ -207,6 +209,8 @@ for idx in selected_indices:
     fci_hoilsis.append(huiclsi)
 
 # insert |lsi> itself
+uics = []
+huics = []
 for j in range(n):
     psi = fci.build_psi (lasci_fs[j], 6, (3,3), 6)
     # psi.x[psi.nconstr + idx] = dx
