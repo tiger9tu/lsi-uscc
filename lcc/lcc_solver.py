@@ -73,21 +73,24 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         H = np.zeros((n, n), dtype=np.complex128)
 
         old_S = getattr(self, "S", np.zeros((0, 0), dtype=np.complex128))
+        print("old S shape: ", old_S.shape)
         old_H = getattr(self, "H", np.zeros((0, 0), dtype=np.complex128))
 
         m = old_S.shape[0]
         if m > 0:
             S[:m, :m] = old_S[:m, :m].copy()
             H[:m, :m] = old_H[:m, :m].copy()
-        for i in range(m, n):
+        for i in range(0, n):
             for j in range(i, n):
+                if i < m and j < m:
+                    continue
                 sij, hij = self._get_Sij_Hij(i, j)
                 S[i, j] = sij
                 H[i, j] = hij
                 if i != j:
                     S[j, i] = np.conj(sij)
                     H[j, i] = np.conj(hij)
-
+    
         self.S, self.H = S, H
 
     def select_ui(self, cond_thresh=8e5):
@@ -207,7 +210,6 @@ if __name__ == '__main__':
 
     #Computing energy through the LAS-UCC kernel using selected excitations
     #==========================================================================================
-    epsilon=0.01
     mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
     mc_uscc.mo_coeff = las.mo_coeff
     lasci_ominus1.GLOBAL_MAX_CYCLE = 15000

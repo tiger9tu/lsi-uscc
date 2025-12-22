@@ -28,9 +28,7 @@ verbose = 3
 
 mol = gto.M (atom = xyz, basis=basis, output=log_path, verbose=verbose)
 mf = scf.RHF (mol).run ()
-ref = mcscf.CASCI (mf, sum(ncas_f), sum(nelecas_f)).run () # = FCI
-print ("RHF energy = ", mf.e_tot)
-print ("CASCI energy = ", ref.e_tot)
+
 
 
 # Running LASSCF
@@ -41,12 +39,25 @@ las.kernel (mo_loc)
 print ("LASSCF energy = ", las.e_tot)
 las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 
+
+cas = mcscf.CASCI (mf, sum(ncas_f), sum(nelecas_f))
+cas.mo_coeff = las.mo_coeff
+cas.kernel ()
+print ("CASCI energy = ", cas.e_tot)
+
+
 all_g, g_sel, a_idxs, i_idxs = grad.get_grad_exact(las, epsilon=0.0)
 gredients = np.array(g_sel)[:,0]
 ordered_indices = np.argsort(-np.abs(gredients))
 n_excitations = len(a_idxs)
 
 fracs = [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08]
+
+mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
+mc_uscc.mo_coeff = las.mo_coeff
+
+lscc_fci = None
+
 for frac in fracs:
     n = max(1, int(n_excitations * frac))
     a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
@@ -54,8 +65,7 @@ for frac in fracs:
     print(f"\nFraction: {frac} | Number of excitations: {n}")
     #Computing energy through the LAS-UCC kernel using selected excitations
     #==========================================================================================
-    mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
-    mc_uscc.mo_coeff = las.mo_coeff
+
     lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
     mc_uscc.fcisolver.norb_f = ncas_f
@@ -65,7 +75,14 @@ for frac in fracs:
     i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
     # print("a_idxs_selected = ", a_idxs_selected)
     # t does not matter now, just to avoid error
-    mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
+    if lscc_fci is None:
+        lscc_fci = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
+    else:
+        lscc_fci.a_idxs = a_idxs_selected
+        lscc_fci.i_idxs = i_idxs_selected
+
+    mc_uscc.fcisolver = lscc_fci
+
     mc_uscc.fcisolver.norb_f = ncas_f
     mc_uscc.kernel(ci0=las_ci0_f)
     print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
