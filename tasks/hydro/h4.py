@@ -42,40 +42,40 @@ las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 #Getting gradient for all cluster excitations through LAS-UCCSD gradients, may use your desired epsilon for selection
 #====================================================================================================================
 
-epsilon = 0.001
-all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon)
-# sort the selected excitations by gradiDent magnitude
+all_g, g_sel, a_idxs, i_idxs = grad.get_grad_exact(las, epsilon=0.0)
 gredients = np.array(g_sel)[:,0]
-sorted_indices = np.argsort(-np.abs(gredients))
-a_idxs_selected = [a_idxs_selected[i] for i in sorted_indices]
-i_idxs_selected = [i_idxs_selected[i] for i in sorted_indices]
+ordered_indices = np.argsort(-np.abs(gredients))
+n_excitations = len(a_idxs)
 
+fracs = [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08]
+# fracs = [0.01,0.02]
+for frac in fracs:
+    n = max(1, int(n_excitations * frac))
+    a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
+    i_idxs_selected = [i_idxs[i] for i in ordered_indices[:n]]
+    print(f"\nFraction: {frac} | Number of excitations: {n}")
 
-#Computing energy through the LAS-UCC kernel using selected excitations
-#==========================================================================================
-epsilon=0.01
-mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
-mc_uscc.mo_coeff = las.mo_coeff
-lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
-mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-mc_uscc.fcisolver.norb_f = [2,2]
-mc_uscc.kernel(ci0=las_ci0_f)
-print("Epsilon: {:.9f} | Number of parameters: {:.0f} | LASUSCCSD energy: {:.9f}".format(epsilon, len(a_idxs_selected), mc_uscc.e_tot))
+    #Computing energy through the LAS-UCC kernel using selected excitations
+    #==========================================================================================
+    mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
+    mc_uscc.mo_coeff = las.mo_coeff
+    lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
+    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = [2,2]
+    mc_uscc.kernel(ci0 =las_ci0_f)
+    print(f"LASUSCCSD energy: {mc_uscc.e_tot:.9f}")
 
-# print("a_idxs_selected = ", a_idxs_selected)
-# to include the Identity operator
-# a_idxs_selected = []
-# i_idxs_selected = []
-a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-# print("a_idxs_selected = ", a_idxs_selected)
-# t does not matter now, just to avoid error
-mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = 1000)
+    # print("a_idxs_selected = ", a_idxs_selected)
+    # to include the Identity operator
+    # a_idxs_selected = []
+    # i_idxs_selected = []
+    a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+    i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+    # print("a_idxs_selected = ", a_idxs_selected)
+    # t does not matter now, just to avoid error
+    mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = ncas_f
 
-mc_uscc.fcisolver.norb_f = ncas_f
+    mc_uscc.kernel(ci0=las_ci0_f)
+    print(f"LASLCCSD energy: {mc_uscc.e_tot:.9f}")
 
-mc_uscc.kernel(ci0=las_ci0_f)
-print("LASLCCSD energy: {:.9f}".format(mc_uscc.e_tot))
-
-# c = mc_uscc.fcisolver.psi0.dp_ci (las_ci0_f)
-# print("norm c = ", np.linalg.norm(c))

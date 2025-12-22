@@ -1,0 +1,50 @@
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+WARN: HOMO -0.194482708639946 == LUMO -0.194213388303628
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+LASSCF((3,3),(3,3)) energy = -294.9841266547912
+CASCI(6,6) energy = -294.9858357132243
+LASSI[1,2] energy = -294.9841275345287
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /home/jinx/repo/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+Selected top 8 excitations indices for LCC:
+ [ 38 544 545  39 405 306 404 307]
+LSILCCSD energy at start: -294.984127874
+lccsi vector (start):
+[ 9.99999581e-01  3.69033856e-07  6.47298560e-04 -6.47038841e-04
+ -3.02199091e-07  5.01057008e-07  7.65315241e-06 -3.53613716e-07
+ -7.54205192e-06]
+<class 'pyscf.mcscf.casci.CASCI'> does not have attributes  max_cycle
+CASCI E = -294.876851845817  E(CI) = -5.97947430773826  S^2 = 0.0000000
+CASCI E = -294.874976827103  E(CI) = -5.97759928902371  S^2 = 0.0000000
+Distance: 3.5 | LASSI Energy: -294.874976826 Ha | CASCI Energy: -294.876851846 Ha | LSILCCSD Energy: -294.874976827 Ha | LCC time: 226.07s
+CASCI E = -294.959078835638  E(CI) = -6.23880140515240  S^2 = -0.0000000
+CASCI E = -294.959025881572  E(CI) = -6.23874845108696  S^2 = 0.0000000
+Distance: 3.4 | LASSI Energy: -294.959024455 Ha | CASCI Energy: -294.959078836 Ha | LSILCCSD Energy: -294.959025882 Ha | LCC time: 234.09s
+CASCI E = -294.982131742398  E(CI) = -7.05762270656197  S^2 = 0.0000000
+CASCI E = -294.982126611315  E(CI) = -7.05761757547862  S^2 = 0.0000000
+Distance: 3.3 | LASSI Energy: -294.982126611 Ha | CASCI Energy: -294.982131742 Ha | LSILCCSD Energy: -294.982126611 Ha | LCC time: 226.10s
+CASCI E = -294.982515740266  E(CI) = -7.07133288413831  S^2 = 0.0000000
+CASCI E = -294.982510629548  E(CI) = -7.07132777342048  S^2 = 0.0000000
+Distance: 3.2 | LASSI Energy: -294.982510629 Ha | CASCI Energy: -294.982515740 Ha | LSILCCSD Energy: -294.982510630 Ha | LCC time: 230.88s
+CASCI E = -294.982934989049  E(CI) = -7.08561753919855  S^2 = -0.0000000
+CASCI E = -294.982929888581  E(CI) = -7.08561243873112  S^2 = 0.0000000
+Distance: 3.1 | LASSI Energy: -294.982929888 Ha | CASCI Energy: -294.982934989 Ha | LSILCCSD Energy: -294.982929889 Ha | LCC time: 230.77s
+CASCI E = -294.983400164171  E(CI) = -7.10057795353009  S^2 = 0.0000000
+CASCI E = -294.983395074485  E(CI) = -7.10057286384432  S^2 = 0.0000000
+Distance: 3.0 | LASSI Energy: -294.983395074 Ha | CASCI Energy: -294.983400164 Ha | LSILCCSD Energy: -294.983395074 Ha | LCC time: 223.50s
+CASCI E = -294.983923938084  E(CI) = -7.11629654680740  S^2 = 0.0000000
+CASCI E = -294.983918860707  E(CI) = -7.11629146943068  S^2 = 0.0000000
+Distance: 2.9 | LASSI Energy: -294.983918860 Ha | CASCI Energy: -294.983923938 Ha | LSILCCSD Energy: -294.983918861 Ha | LCC time: 228.51s
+CASCI E = -294.984521933799  E(CI) = -7.13285486117803  S^2 = 0.0000000
+CASCI E = -294.984516871323  E(CI) = -7.13284979870218  S^2 = 0.0000000
+Distance: 2.8 | LASSI Energy: -294.984516871 Ha | CASCI Energy: -294.984521934 Ha | LSILCCSD Energy: -294.984516871 Ha | LCC time: 229.17s
+CASCI E = -294.985213287617  E(CI) = -7.15042537358943  S^2 = 0.0000000
+CASCI E = -294.985208242497  E(CI) = -7.15042032846873  S^2 = 0.0000000
+Distance: 2.7 | LASSI Energy: -294.985208242 Ha | CASCI Energy: -294.985213288 Ha | LSILCCSD Energy: -294.985208242 Ha | LCC time: 224.55s
+CASCI E = -294.986021853535  E(CI) = -7.16912378893312  S^2 = -0.0000000
+CASCI E = -294.986016829992  E(CI) = -7.16911876539012  S^2 = 0.0000000
+Distance: 2.6 | LASSI Energy: -294.986016830 Ha | CASCI Energy: -294.986021854 Ha | LSILCCSD Energy: -294.986016830 Ha | LCC time: 216.84s
+CASCI E = -294.986978138571  E(CI) = -7.18919262578714  S^2 = 0.0000000

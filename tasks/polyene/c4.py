@@ -23,8 +23,6 @@ nelecas_f = (2,2)
 spin_sub_f = (1,1)
 frag_atom_list=((0, 2), (3, 1))
 basis = '6-31g' 
-# epsilon = 0.001
-fraction = 0.01
 verbose = 3
 
 
@@ -43,36 +41,32 @@ las.kernel (mo_loc)
 print ("LASSCF energy = ", las.e_tot)
 las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 
+all_g, g_sel, a_idxs, i_idxs = grad.get_grad_exact(las, epsilon=0.0)
+gredients = np.array(g_sel)[:,0]
+ordered_indices = np.argsort(-np.abs(gredients))
+n_excitations = len(a_idxs)
 
-# all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon)
-a_idxs_selected, i_idxs_selected = get_sorted_excitations(las, fraction=fraction, verbose=verbose)
+fracs = [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08]
+for frac in fracs:
+    n = max(1, int(n_excitations * frac))
+    a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
+    i_idxs_selected = [i_idxs[i] for i in ordered_indices[:n]]
+    print(f"\nFraction: {frac} | Number of excitations: {n}")
+    #Computing energy through the LAS-UCC kernel using selected excitations
+    #==========================================================================================
+    mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
+    mc_uscc.mo_coeff = las.mo_coeff
+    lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
+    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = ncas_f
+    mc_uscc.kernel(ci0=las_ci0_f)
+    print("LASUSCCSD-VQE energy: {:.9f}".format(mc_uscc.e_tot))
+    a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+    i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+    # print("a_idxs_selected = ", a_idxs_selected)
+    # t does not matter now, just to avoid error
+    mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
+    mc_uscc.fcisolver.norb_f = ncas_f
+    mc_uscc.kernel(ci0=las_ci0_f)
+    print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
 
-#Computing energy through the LAS-UCC kernel using selected excitations
-#==========================================================================================
-mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
-mc_uscc.mo_coeff = las.mo_coeff
-lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
-mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-mc_uscc.fcisolver.norb_f = ncas_f
-mc_uscc.kernel(ci0=las_ci0_f)
-print("Fraction: {:.9f} | Number of parameters: {:.0f} | LASUSCCSD-VQE energy: {:.9f}".format(fraction, len(a_idxs_selected), mc_uscc.e_tot))
-
-
-a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-# print("a_idxs_selected = ", a_idxs_selected)
-# t does not matter now, just to avoid error
-mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = 1000)
-
-mc_uscc.fcisolver.norb_f = ncas_f
-
-# las_ci_complex = np.array(las.ci, dtype=complex)
-
-mc_uscc.kernel(ci0=las_ci0_f)
-print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
-
-
-# las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
-# # Print numpy dtype if array-like, and also Python type of the first element
-# mc_uscc.kernel(ci0=las_ci0_f)
-# print("LASLCCSD energy: {:.9f}".format(mc_uscc.e_tot))
