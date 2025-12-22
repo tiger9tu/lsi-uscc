@@ -73,7 +73,6 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         H = np.zeros((n, n), dtype=np.complex128)
 
         old_S = getattr(self, "S", np.zeros((0, 0), dtype=np.complex128))
-        print("old S shape: ", old_S.shape)
         old_H = getattr(self, "H", np.zeros((0, 0), dtype=np.complex128))
 
         m = old_S.shape[0]
@@ -93,7 +92,7 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
     
         self.S, self.H = S, H
 
-    def select_ui(self, cond_thresh=8e5):
+    def select_ui(self, cond_thresh=8e8):
         n = self.S.shape[0]
         select_idx = np.ones(n, dtype=bool)
         for i in range(1, n + 1):
@@ -103,9 +102,9 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
             except Exception:
                 cnum = float('inf')
             if cnum > cond_thresh:
-                if self.log.verbose >= 4:
-                    self.log.debug("discarding psi[{}] | excitation = {}".format(i - 1, (self.a_idxs[i - 1], self.i_idxs[i - 1])) )
-                # print("discarding psi[{}] | condition number = {}".format(i - 1, cnum) )
+                # if self.log.verbose >= 4:
+                #     self.log.debug("discarding psi[{}] | excitation = {}".format(i - 1, (self.a_idxs[i - 1], self.i_idxs[i - 1])) )
+                print("discarding psi[{}] | condition number = {}".format(i - 1, cnum) )
                 select_idx[i - 1] = 0
         return select_idx
 
@@ -114,7 +113,7 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
             orbsym=None, wfnsym=None, ecore=0, **kwargs):
         
         if norb_f is None: norb_f = self.norb_f
-        cond_thresh = kwargs.get('cond_thresh', 8e5)
+        cond_thresh = kwargs.get('cond_thresh', 8e8)
         verbose = kwargs.get ('verbose', 1)
         if self.ci0_fs is None:
             if ci0 is None:
@@ -140,7 +139,8 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         idx_sel = self.select_ui(cond_thresh)
         S_sel = self.S[np.ix_(idx_sel, idx_sel)]
         H_sel = self.H[np.ix_(idx_sel, idx_sel)]
-        eigvals, eigvecs = np.linalg.eig (np.linalg.solve (S_sel, H_sel))
+        from scipy.linalg import eigh # more stable, S cond < 10^10 is required
+        eigvals, eigvecs = eigh(H_sel, S_sel)
         e_tot = np.min (eigvals).real
         lccsi_sel = eigvecs[:, np.argmin (eigvals)]
         lccsi = np.zeros (self.S.shape[0], dtype=np.complex128)
