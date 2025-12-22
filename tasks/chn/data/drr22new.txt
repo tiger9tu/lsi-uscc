@@ -1,0 +1,13 @@
+r: 1  q: 2  frac: 0.01
+ncas_f: (3, 3)  nelecas_f: ((2, 1), (1, 2))
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+LASSCF((3,3),(3,3)) energy = -294.988354919661
+CASCI(6,6) energy = -294.9899945501192
+LASSI[1,2]energy = -294.9894311161154
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+time for building H and S matrices of size 56 in psi basis:  168.82524299621582  seconds

@@ -1,0 +1,26 @@
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+LASSCF((3,3),(3,3)) energy = -294.988354919661
+CASCI(6,6) energy = -294.9899945501192
+LASSI[1,2] energy = -294.9894311161154
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+overwrite output file: /project/lgagliardi/tuy/qchem/las-uscc-noqe/tasks/chn/data/c2h4n4_lassirq_631g.log
+LSILCCSD energy at start: -294.989853010
+lccsi vector (start):
+[ 9.99039156e-01 -1.96632932e-02 -5.68397320e-03  5.67938664e-03
+ -3.82966659e-02 -8.77642862e-04  9.24170658e-04 -1.13957510e-03
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+  0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00]
+CASCI E = -294.968549927333  E(CI) = -6.09008334544586  S^2 = 0.0000000
+CASCI E = -294.968545250367  E(CI) = -6.09007866848003  S^2 = 1.4875647
+Distance: 3.5 | LASSI Energy: -294.968093341 Ha | CASCI Energy: -294.968549927 Ha | LSILCCSD Energy: -294.968545250 Ha | LCC time: 3503.94s
+CASCI E = -295.247183965291  E(CI) = -6.64419704207205  S^2 = 0.0000000
+CASCI E = -295.247183853960  E(CI) = -6.64419693074103  S^2 = 0.0000007
+Distance: 1.5 | LASSI Energy: -295.247183162 Ha | CASCI Energy: -295.247183965 Ha | LSILCCSD Energy: -295.247183854 Ha | LCC time: 2962.21s

@@ -13,7 +13,6 @@ import time
 from itertools import product
 from helper import util
 from lcc.lcc_solver import FCISolver_CC
-import ast
 import sys
 pwd = Path(__file__).resolve().parent
 VERBOSE = 1
@@ -21,16 +20,15 @@ VERBOSE = 1
 
 r = 1
 q = 2
-frac = 0.03
+frac = 0.01
 ncas_f = (3,3)
 nelecas_f = ((2,1),(1,2))
-nelecas = tuple(sum(x) for x in zip(*nelecas_f))
-# dnn0 = float(sys.argv[1])
-# dnn1 = float(sys.argv[2])
-dnn0 = 2.0
-dnn1 = 2.0
+print("r:", r, " q:", q, " frac:", frac)
+print("ncas_f:", ncas_f, " nelecas_f:", nelecas_f)
 
-grad_path = pwd / 'data' / 'lcc_grad_cas6r1q2.txt'
+nelecas = tuple(sum(x) for x in zip(*nelecas_f))
+dnn0 = float(sys.argv[1])
+dnn1 = float(sys.argv[2])
 
 mol = struct (dnn0, dnn1, '6-31g')
 mol.output = pwd / 'data' / 'c2h4n4_lassirq_631g.log'
@@ -71,7 +69,7 @@ uop = lasuccsd.gen_uccsd_op(las.ncas,las.ncas_sub)
 a_idxs = uop.a_idxs # for testing
 i_idxs = uop.i_idxs
 
-mc_uscc =  mcscf.CASCI (mf, np.sum(ncas_f), np.sum(nelecas_f))
+mc_uscc =  mcscf.CASCI (mf, np.sum(ncas_f), nelecas)
 mc_uscc.mo_coeff = las.mo_coeff
 lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
 mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs, i_idxs)
@@ -154,42 +152,42 @@ if VERBOSE > 3:
 
 # first we obtain gradients of the excitations
 
-try:
-    with grad_path.open('r') as f:
-        s = f.read()
-        s = s.replace("np.float64(", "").replace(")", "")
-        grads = ast.literal_eval(s)
-except FileNotFoundError:
-    grads = None
 
-if grads is None:
-    grads = []
-    dx = 1e-5 # step size for numerical gradient
-    start = time.time()
-    for i in range(len(a_idxs)):
-        uilass = []
-        huilass = []
-        a_idx = a_idxs[i]
-        i_idx = i_idxs[i]
-        for j in range(n):
-            psi = lasci_ominus1.LASUCCTrialState (fci, ci0_f, norb, norb_f, nelec)
-            psi.x[psi.nconstr + i] = dx
-            c, uc, huc, uhuc, c_f = psi.hc_x (psi.x, h)
-            uics.append(uc.ravel())
-            huics.append(huc.ravel())
+grads = []
+start = time.time()
 
-        uiclsi = sum(e_vecs_lsi[i, 0] * uics[i] for i in range(n))
-        huiclsi = sum(e_vecs_lsi[i, 0] * huics[i] for i in range(n))    
-        e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals_lsi[0]
-        grad = np.abs(e_dx.real / dx)
-        grads.append(grad)
-    end = time.time()
-    print("time for evaluating ", len(a_idxs) , " gradients is ", end - start, " seconds")
-    print("Gradients: ")
-    print(grads)
-    with grad_path.open('w') as f:
-        f.write(str(grads))
-    
+# gradient index k corresponds to excitation (a_idxs[k], i_idxs[k])
+# perturb each psi.x at (psi.nconstr + k)
+for k in range(len(a_idxs)):
+    uilass = []
+    huilass = []
+
+    for j in range(n):
+        psi = las_psis[j]
+        psi.x[psi.nconstr + k] = dx
+        c, uc, huc, uhuc, c_f = psi.hc_x(psi.x, h)
+        uilass.append(uc.ravel())
+        huilass.append(huc.ravel())
+        psi.x[psi.nconstr + k] = 0.0
+
+    uiclsi = sum(si_vec[j] * uilass[j] for j in range(n))
+    huiclsi = sum(si_vec[j] * huilass[j] for j in range(n))
+
+    e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals[0]
+    grad = float(np.abs(e_dx.real / dx))
+    grads.append(grad)
+
+end = time.time()
+# print("time for evaluating ", len(a_idxs) , " gradients is ", end - start, " seconds")
+# print("Gradients: ")
+# import ast
+
+# grad_path = pwd / 'data' / f'lcc_grad_cas6r1q2_dnn{dnn0}_{dnn1}.txt'
+# with grad_path.open('r') as f:
+#     s = f.read()
+# s = s.replace("np.float64(", "").replace(")", "")
+
+# grads = ast.literal_eval(s)
 
 # print("gradients: \n", grads)
 

@@ -172,11 +172,12 @@ if grads is None:
         a_idx = a_idxs[i]
         i_idx = i_idxs[i]
         for j in range(n):
-            psi = lasci_ominus1.LASUCCTrialState (fci, ci0_f, norb, norb_f, nelec)
-            psi.x[psi.nconstr + i] = dx
+            # psi = lasci_ominus1.LASUCCTrialState (fci, , norb, norb_f, nelec)
+            las_psis[j].x[psi.nconstr + i] = dx
             c, uc, huc, uhuc, c_f = psi.hc_x (psi.x, h)
             uics.append(uc.ravel())
             huics.append(huc.ravel())
+            las_psis[j].x[psi.nconstr + i] = 0
 
         uiclsi = sum(e_vecs_lsi[i, 0] * uics[i] for i in range(n))
         huiclsi = sum(e_vecs_lsi[i, 0] * huics[i] for i in range(n))    

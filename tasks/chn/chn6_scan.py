@@ -2,17 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-Full one-file script:
+Full one-file script (updated):
 1) Do LASSCF + LASSI[r,q] at the starting geometry (dr00, dr01)
-2) Precompute the excitation selection (from your saved gradient file)
-3) Run a scanner over dr, and at each point:
+2) Run a scanner over dr, and at each point:
    - run LASSI scanner
-   - run CASCI (optional reference, kept from your loop)
-   - run LCC on top of the CURRENT LASSI state via a wrapped function
+   - run CASCI reference
+   - run LCC on top of the CURRENT LASSI state
+
+Key change:
+- run_lcc_on_lassi() no longer takes a_idxs_sel/i_idxs_sel (nor a_idx/i_idx).
+- Inside run_lcc_on_lassi():
+  - builds full excitation list (a_idxs_full/i_idxs_full)
+  - tries to load gradients from grad_path; if missing, computes & saves
+  - selects top-|grad| fraction excitations
+  - runs FCISolver_CC with selected excitations
+  - prints gradients to file (grad_path) (and optional stdout if verbose>1)
 """
 
 import time
 import ast
+import sys
 import numpy as np
 from scipy import linalg
 from itertools import product
@@ -66,23 +75,39 @@ def run_lcc_on_lassi(
     lsi_obj,             # the CURRENT LASSI object (after it has been updated/kernel'ed by scanner)
     ncas_f,
     nelecas,
-    a_idxs_full,
-    i_idxs_full,
-    a_idxs_sel,
-    i_idxs_sel,
+    grad_path,           # Path to gradient cache file for THIS geometry
+    frac=0.01,           # keep top frac excitations by |grad|
+    dx=1e-5,             # finite-diff step
     t=np.pi / 2,
     verbose=0,
 ):
     """
     Perform LCC (FCISolver_CC) on top of the CURRENT LASSI state.
 
+    New behavior:
+      - Build full excitation list internally
+      - Load gradients from grad_path if exists, else compute+save
+      - Select a_idxs_sel/i_idxs_sel based on top-|grad| fraction
+      - Run LCC using selected excitations
+
     Returns:
         e_lcc (float)
-        lccsi (np.ndarray)  # complex vector from solver
-        si_gs (np.ndarray)  # real GS coefficient vector in psi basis (what you feed to CC)
+        lccsi (np.ndarray)   # complex vector from solver
+        si_gs (np.ndarray)   # real GS coefficient vector in psi basis
+        grads (list[float])  # gradient magnitudes aligned with full excitation list
+        top_indices (np.ndarray) # selected indices (from full list; excludes inserted |lsi>)
     """
 
-    # --- Build a USCC builder so we can construct LASUCCTrialState psi objects ---
+    # ------------------------
+    # 0) Full excitation list (a_idxs_full/i_idxs_full)
+    # ------------------------
+    uop = lasuccsd.gen_uccsd_op(las.ncas, las.ncas_sub)
+    a_idxs_full = uop.a_idxs
+    i_idxs_full = uop.i_idxs
+
+    # ------------------------
+    # 1) Build a USCC builder so we can construct LASUCCTrialState psi objects
+    # ------------------------
     mc_uscc = mcscf.CASCI(mf, int(np.sum(ncas_f)), nelecas)
     mc_uscc.mo_coeff = las.mo_coeff
 
@@ -90,7 +115,9 @@ def run_lcc_on_lassi(
     fci_builder.norb_f = ncas_f
     mc_uscc.fcisolver = fci_builder
 
-    # --- Build product-state CI vectors in the full CAS FCI space (lasci_fs) ---
+    # ------------------------
+    # 2) Build product-state CI vectors in the full CAS FCI space (lasci_fs)
+    # ------------------------
     las_ci_fs = []
     nroots = len(lsi_obj.ci[0])
     nfrag = len(lsi_obj.ci)
@@ -112,7 +139,9 @@ def run_lcc_on_lassi(
         for prodci in product(*frageigci):
             las_ci_fs.append(util.cilas2f(prodci, norbs, nelecs))
 
-    # --- Build H,S in the psi basis and solve generalized eigenproblem to get current LASSI GS vector ---
+    # ------------------------
+    # 3) Build H,S in the psi basis and solve generalized eigenproblem to get current LASSI GS vector
+    # ------------------------
     h1eff, e_core = mc_uscc.get_h1eff()
     h2eff = mc_uscc.get_h2eff()
     h = [e_core, h1eff, h2eff]
@@ -126,7 +155,6 @@ def run_lcc_on_lassi(
     S = np.zeros((n, n), dtype=complex)
     H = np.zeros((n, n), dtype=complex)
 
-    # (same pattern you used, but slightly reduced redundant work)
     for i in range(n):
         lasi, hlasi = las_psis[i].hc_x(las_psis[i].x, h)[1:3]
         lasi, hlasi = lasi.ravel(), hlasi.ravel()
@@ -147,12 +175,94 @@ def run_lcc_on_lassi(
     e_vals = e_vals[idx]
     e_vecs = e_vecs[:, idx]
 
-    si_gs = e_vecs[:, 0].real  # match your previous usage
+    # GS vector in psi basis
+    si_vec = e_vecs[:, 0]       # complex in general
+    si_gs = si_vec.real         # keep your convention
 
     if verbose:
         print(f"  [debug] psi-basis GS energy = {e_vals[0].real:.12f} Ha")
 
-    # --- Run your CC solver on top of the LASSI GS vector ---
+    # ------------------------
+    # 4) Load gradients if available, else compute & write to grad_path
+    # ------------------------
+    grad_path = Path(grad_path)
+    grad_path.parent.mkdir(parents=True, exist_ok=True)
+
+    grads = None
+    try:
+        with grad_path.open("r") as f:
+            txt = f.read().strip()
+        if txt:
+            txt = txt.replace("np.float64(", "").replace(")", "")
+            grads = ast.literal_eval(txt)
+    except FileNotFoundError:
+        grads = None
+    except Exception:
+        grads = None
+
+    if grads is None:
+        grads = []
+        start = time.time()
+
+        # gradient index k corresponds to excitation (a_idxs_full[k], i_idxs_full[k])
+        # perturb each psi.x at (psi.nconstr + k)
+        for k in range(len(a_idxs_full)):
+            uilass = []
+            huilass = []
+
+            for j in range(n):
+                psi = las_psis[j]
+                psi.x[psi.nconstr + k] = dx
+                c, uc, huc, uhuc, c_f = psi.hc_x(psi.x, h)
+                uilass.append(uc.ravel())
+                huilass.append(huc.ravel())
+                psi.x[psi.nconstr + k] = 0.0
+
+            uiclsi = sum(si_vec[j] * uilass[j] for j in range(n))
+            huiclsi = sum(si_vec[j] * huilass[j] for j in range(n))
+
+            e_dx = (uiclsi.conj().dot(huiclsi)) / (uiclsi.conj().dot(uiclsi)) - e_vals[0]
+            grad = float(np.abs(e_dx.real / dx))
+            grads.append(grad)
+
+        end = time.time()
+
+        # Save gradients to file (requested)
+        with grad_path.open("w") as f:
+            f.write(str(grads))
+
+        if verbose:
+            print(
+                f"  [grad] computed {len(a_idxs_full)} gradients in {end - start:.2f} s"
+            )
+            print(f"  [grad] saved to: {grad_path}")
+
+    if verbose > 1:
+        print("  [grad] gradients:")
+        print(grads)
+
+    # ------------------------
+    # 5) Select top fraction excitations using gradients
+    # ------------------------
+    ncc = int(np.ceil(frac * len(grads)))
+    ncc = max(ncc, 1)
+    top_indices = np.argsort(np.abs(grads))[-ncc:][::-1]
+
+    a_idxs_sel = [a_idxs_full[i] for i in top_indices]
+    i_idxs_sel = [i_idxs_full[i] for i in top_indices]
+
+    # include the |lsi> itself
+    a_idxs_sel.insert(0, np.array([0], dtype=np.uint8))
+    i_idxs_sel.insert(0, np.array([0], dtype=np.uint8))
+
+    if verbose:
+        print(f"  [sel] frac={frac} -> selected top {ncc}/{len(grads)} excitations")
+        if verbose > 1:
+            print("  [sel] indices:", top_indices)
+
+    # ------------------------
+    # 6) Run CC solver on top of the LASSI GS vector
+    # ------------------------
     mc_lcc = mcscf.CASCI(mf, int(np.sum(ncas_f)), nelecas)
     mc_lcc.mo_coeff = las.mo_coeff
 
@@ -162,7 +272,7 @@ def run_lcc_on_lassi(
     mc_lcc.fcisolver.si = si_gs
 
     mc_lcc.kernel()
-    return mc_lcc.e_tot, mc_lcc.fcisolver.lccsi, si_gs
+    return mc_lcc.e_tot, mc_lcc.fcisolver.lccsi, si_gs, grads, top_indices
 
 
 # ------------------------ main ------------------------ #
@@ -171,12 +281,14 @@ def main():
 
     VERBOSE = 1
 
+    pes_step = -2.0
     # LASSI[r,q]
     r = 1
     q = 2
 
-    # select top fraction of excitations (from your saved gradient list)
-    frac = 0.01
+    # select top fraction of excitations (based on gradients)
+    frac = 0.04
+    dx = 1e-5
 
     # fragment CAS definition
     ncas_f = (3, 3)
@@ -228,40 +340,19 @@ def main():
         print(f"SI vector (LASSI[{r},{q}]):")
         print(si_rq[:, 0])
 
-    # ------------------------ precompute excitation lists & selection (ONCE) ------------------------ #
-    uop = lasuccsd.gen_uccsd_op(las.ncas, las.ncas_sub)
-    a_idxs_full = uop.a_idxs
-    i_idxs_full = uop.i_idxs
-
-    grad_path = pwd / "data" / "lcc_grad_cas6r1q2.txt"
-    with grad_path.open("r") as f:
-        s = f.read()
-    s = s.replace("np.float64(", "").replace(")", "")
-    grads = ast.literal_eval(s)
-
-    ncc = int(np.ceil(frac * len(grads)))
-    top_indices = np.argsort(np.abs(grads))[-ncc:][::-1]
-    print(f"Selected top {ncc} excitations indices for LCC:\n", top_indices)
-
-    a_idxs_sel = [a_idxs_full[i] for i in top_indices]
-    i_idxs_sel = [i_idxs_full[i] for i in top_indices]
-
-    # include the |lsi> itself
-    a_idxs_sel.insert(0, np.array([0], dtype=np.uint8))
-    i_idxs_sel.insert(0, np.array([0], dtype=np.uint8))
-
     # ------------------------ optional: run LCC once at start point ------------------------ #
-    e_lcc0, lccsi0, si_gs0 = run_lcc_on_lassi(
+    grad_path0 = pwd / "data" / f"lcc_grad_cas6r1q2_dnn{dr00:.2f}_{dr01:.2f}.txt"
+
+    e_lcc0, lccsi0, si_gs0, grads0, top_idx0 = run_lcc_on_lassi(
         mol=mol,
         mf=mf,
         las=las,
         lsi_obj=lsi,
         ncas_f=ncas_f,
         nelecas=nelecas,
-        a_idxs_full=a_idxs_full,
-        i_idxs_full=i_idxs_full,
-        a_idxs_sel=a_idxs_sel,
-        i_idxs_sel=i_idxs_sel,
+        grad_path=grad_path0,
+        frac=frac,
+        dx=dx,
         t=np.pi / 2,
         verbose=0,
     )
@@ -273,13 +364,13 @@ def main():
     # ------------------------ scanner ------------------------ #
     lsi_scanner = lsi.as_scanner()
 
-    for dr in np.arange(3.5, -0.31, -0.1):
+    for dr in np.arange(3.5, -0.31, pes_step):
         mol1 = struct(dr, dr, "6-31g")
 
         # LASSI scanner step (updates internal state)
         e_lassi = lsi_scanner(mol1)
 
-        # CASCI reference (kept from your loop; use mol1, not mol)
+        # CASCI reference (use mol1)
         mc = mcscf.CASCI(lsi_scanner._las._scf, int(np.sum(ncas_f)), nelecas).set(
             fcisolver=csf_solver(mol1, smult=1)
         )
@@ -288,21 +379,22 @@ def main():
         e_casci = mc.e_tot
 
         # LCC on top of current LASSI state
-        # Get updated LASSCF object from scanner
         las_now = _get_las_from_scanner(lsi_scanner)
 
+        # Per-geometry gradient cache file
+        grad_path = pwd / "data" / f"lcc_grad_cas6r1q2_dnn{dr:.2f}_{dr:.2f}.txt"
+
         t0 = time.time()
-        e_lcc, lccsi, si_gs = run_lcc_on_lassi(
+        e_lcc, lccsi, si_gs, grads, top_idx = run_lcc_on_lassi(
             mol=mol1,
             mf=lsi_scanner._las._scf,
             las=las_now,
             lsi_obj=lsi_scanner,   # scanner carries updated .ci/.fciboxes in most implementations
             ncas_f=ncas_f,
             nelecas=nelecas,
-            a_idxs_full=a_idxs_full,
-            i_idxs_full=i_idxs_full,
-            a_idxs_sel=a_idxs_sel,
-            i_idxs_sel=i_idxs_sel,
+            grad_path=grad_path,
+            frac=frac,
+            dx=dx,
             t=np.pi / 2,
             verbose=0,
         )

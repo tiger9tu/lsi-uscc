@@ -44,13 +44,25 @@ done
 # -------------------------
 # argument checking
 # -------------------------
-if [ -z "$input" ] || [ -z "$output" ] || [ -z "$arg1" ] || [ -z "$arg2" ]; then
+if [ -z "$input" ] || [ -z "$output" ]; then
     echo "Usage:"
-    echo "  sbatch sub.sh --input <input.py> --output <out.txt> --arg1 <val1> --arg2 <val2>"
+    echo "  sbatch sub.sh --input <input.py> --output <out.txt> [--arg1 <val1>] [--arg2 <val2>]"
     exit 1
+fi
+
+# -------------------------
+# build python command args (optional)
+# -------------------------
+py_args=""
+if [ -n "$arg1" ]; then
+    py_args="$py_args $arg1"
+fi
+if [ -n "$arg2" ]; then
+    py_args="$py_args $arg2"
 fi
 
 # -------------------------
 # execute the python script
 # -------------------------
-python "$input"  "$arg1" "$arg2" > "$output"
+# NOTE: py_args may be empty -> then python only gets the script path
+python "$input" $py_args > "$output"
