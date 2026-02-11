@@ -63,6 +63,9 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         ulsi, hulsi = self.get_uilsi_huilsi(j)
         uilsi = uilsi.ravel()
         return uilsi.conj().dot(ulsi.ravel()), uilsi.conj().dot(hulsi.ravel())
+    
+    # efficiently evaluate <a^{abc}_{ijk}> using the fact that it factorizes into fragments
+    # def 
 
     def build_S_H(self):
         # self.psi0 = LASUCCTrialState (self, ci0_f, norb, norb_f, nelec)
