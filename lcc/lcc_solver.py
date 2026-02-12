@@ -48,12 +48,14 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
         uilass = []
         huilass = []
         for psi0 in self.las_psi0s:
-            psi0.x[psi0.nconstr + i] = self.t
+            if i > 0: # The 0-th operator is identity, no need to apply U
+                psi0.x[psi0.nconstr + i - 1] = self.t
             uilas, huilas = psi0.hc_x(psi0.x, self.h)[1:3]
             uilass.append(uilas)
             huilass.append(huilas)
             # reset the x vector
-            psi0.x[psi0.nconstr + i] = 0
+            if i > 0:
+                psi0.x[psi0.nconstr + i - 1] = 0
         uilsi = sum(self.si[i] * uilass[i] for i in range(len(self.si)))
         huilsi = sum(self.si[i] * huilass[i] for i in range(len(self.si))) 
         return uilsi, huilsi   
@@ -70,7 +72,7 @@ class FCISolver_CC(lasci_ominus1.FCISolver):
     def build_S_H(self):
         # self.psi0 = LASUCCTrialState (self, ci0_f, norb, norb_f, nelec)
         assert self.las_psi0s is not None, "LASUCCTrialState not initialized"
-        n = len(self.a_idxs)
+        n = len(self.a_idxs) + 1 # +1 for the identity operator
         # reuse existing S/H if present, otherwise create new ones; only compute additional elements
         S = np.zeros((n, n), dtype=np.complex128)
         H = np.zeros((n, n), dtype=np.complex128)

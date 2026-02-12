@@ -79,8 +79,9 @@ mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selecte
 mc_uscc.fcisolver.norb_f = ncas_f
 mc_uscc.kernel(ci0=las_ci0_f)
 print("LASUSCCSD-VQE energy: {:.9f}".format(mc_uscc.e_tot))
-a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+# a_idxs_selected.insert(0, np.array([], dtype=np.uint8))
+# i_idxs_selected.insert(0, np.array([], dtype=np.uint8))
+
 
 
 print("Selected excitations (a_idxs, i_idxs):")
@@ -106,57 +107,102 @@ print_list_matrix(S)
 print("H matrix:\n")
 print_list_matrix(H)
 
-# let's do the efficient classical lcc at the ci level
-# first let's obtain the offdiagonal elements of S
+
+from helper.op import Op, IdentityOp, UOp
 
 
-def apply_operators(det_idx, orb_idxs, types):
-    # Convert determinant index to binary representation
-    det = det_idx
-    phase = 1
-    
-    # Apply operators in sequence
-    for orb_idx, op_type in zip(orb_idxs, types):
-        if op_type == 1:  # Creation operator
-            # Check if orbital is already occupied
-            if det & (1 << orb_idx):
-                return None  # Pauli exclusion principle
-            # Count occupied orbitals before this one for phase
-            phase *= -1 if bin(det & ((1 << orb_idx) - 1)).count('1') % 2 == 1 else 1
-            det |= (1 << orb_idx)
-        else:  # Annihilation operator (op_type == 0)
-            # Check if orbital is occupied
-            if not (det & (1 << orb_idx)):
-                return None  # Can't annihilate empty orbital
-            # Count occupied orbitals before this one for phase
-            phase *= -1 if bin(det & ((1 << orb_idx) - 1)).count('1') % 2 == 1 else 1
-            det &= ~(1 << orb_idx)
-    
-    return det, phase
 
 
-def op(orb_idxs, types, ci):
-    # apply a sequence of creation and annihilation operators defined by orb_idxs and types to the ci vector
-    # types: 1 for creation, 0 for annihilation
-    # ci: 2^n vector for n spin orbitals, the first half corresponds to alpha spin and the second half to beta spin
-    # for example the 0111 corresponds to alpha 01, beta 11
-    ci_new = np.zeros_like(ci)
-    for det_idx in range(len(ci)):
-        if ci[det_idx] != 0:
-            det_result = apply_operators(det_idx, orb_idxs, types)
-            if det_result is not None:
-                det_new, phase = det_result
-                ci_new[det_new] += phase * ci[det_idx]
-    return ci_new
 
-frag_orbs = [[0,1], [2,3]]
-norb = 4 # spatial orbitals
-n_frag = len(frag_orbs)
+def print_direc(fcivec, threshold=1e-6):
+    nbits = max(1, (fcivec.size - 1).bit_length())
+    for idx, amp in enumerate(fcivec):
+        if abs(amp) > threshold:
+            det = format(idx, f"0{nbits}b")
+            print(f"{amp} |{det}>")
 
+# First we test the fci case for simplicity
+psi = mc_uscc.fcisolver.las_psi0s[0]
+fcivec = psi.dp_ci(psi.ci_f)
+# fcivec_vec = fcivec.transpose().reshape(fcivec.size)
+print("FCI CI vector (sparse format):")
+fcivec_vec = fcivec.transpose().reshape(fcivec.size)
+print_direc(fcivec_vec)
+
+
+ucc_ops = [IdentityOp()] + [UOp(np.pi/2, a_idx, i_idx) for a_idx, i_idx in zip(a_idxs_selected, i_idxs_selected)]
+
+Ufcivec = ucc_ops[1].apply(fcivec_vec)
+print("After applying the first UOp (pi/2 rotation):")
+print_direc(Ufcivec)
+for i, op1 in enumerate(ucc_ops):
+    for j, op2 in enumerate(ucc_ops):
+        op = op1.conjugate() * op2
+        new_vec = op.apply(fcivec_vec)
+        overlap = np.dot(fcivec_vec.conj(), new_vec)
+        print(f"Overlap Sij = {overlap}")
+
+# Generate OEI, TEI
+nmo = las.mo_coeff.shape[1]
+ncas, ncore = las.ncas, las.ncore
+nocc = ncore + ncas
+h2e = lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas+1)//2)).reshape (nmo, ncas, ncas, ncas)[ncore:nocc,:,:,:]
+h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
+h2las = h2e
+
+class h1Op(Op):
+    def __init__(self, h1):
+        self.h1 = h1
+        terms = []
+        n_orb = h1.shape[0]
+        for p in range(n_orb):
+            for q in range(n_orb):
+                if abs(h1[p, q]) > 1e-8:
+                    terms.append((h1[p, q], [("create", p), ("annihilate", q)]))
+        super().__init__(terms)
+
+class h2Op(Op):
+    def __init__(self, h2):
+        self.h2 = h2
+        terms = []
+        n_orb = h2.shape[0]
+        for p in range(n_orb):
+            for q in range(n_orb):
+                for r in range(n_orb):
+                    for s in range(n_orb):
+                        if abs(h2[p, q, r, s]) > 1e-8:
+                            terms.append((h2[p, q, r, s], [("create", p), ("create", q), ("annihilate", s), ("annihilate", r)]))
+        super().__init__(terms)
+
+h1_op = h1Op(h1las)
+h2_op = h2Op(h2las)
+
+
+# now let's try evaluate <LAS | H | LAS >
+h = h1_op + h2_op
+H_LAS = h.apply(fcivec_vec)
+energy = np.dot(fcivec_vec.conj(), H_LAS)
+print(f"Energy from direct application of H operator: {energy}")
+
+#
 # for evaluate the S matrix, we iterate through all the pairs of excitations
-for p, (a_idx_p, i_idx_p) in enumerate(zip(a_idxs_selected, i_idxs_selected)):
-    for q, (a_idx_q, i_idx_q) in enumerate(zip(a_idxs_selected, i_idxs_selected)):
+# for p, (a_idx_p, i_idx_p) in enumerate(zip(a_idxs_selected, i_idxs_selected)):
+#     for q, (a_idx_q, i_idx_q) in enumerate(zip(a_idxs_selected, i_idxs_selected)):
+#         if a_idx_p.size == 0 and i_idx_p.size == 0:
+#             Up_pi_2 = IdentityOp()
+#         else:
+#             Up_pi_2 = UOp(np.pi/2, a_idx_p, i_idx_p)
+#         if a_idx_q.size == 0 and i_idx_q.size == 0:
+#             Uq_pi_2 = IdentityOp()
+#         else:
+#             Uq_pi_2 = UOp(np.pi/2, a_idx_q, i_idx_q)
+
+#         Up_diag_Uq = Up_pi_2.conjugate() * Uq_pi_2
+
+
         # <Up(pi/2)' Uq(pi/2)> = <(1 + ap'ip - ip'ap - (nap + nip - 2 nap nip))' (1 + aq'iq - iq'aq - (naq + niq - 2 naq niq))>
+        
+        
         # we have to get all the combinations of the above terms
         # but for now let's do it for our simple test case, which is 
 
