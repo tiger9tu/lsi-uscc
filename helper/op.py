@@ -39,13 +39,21 @@ class Op:
         return result
 
     def __mul__(self, other):
-        if not isinstance(other, Op):
-            return NotImplemented
-        result = Op()
-        for coeff_a, ops_a in self.terms:
-            for coeff_b, ops_b in other.terms:
-                result.add_term(coeff_a * coeff_b, ops_a + ops_b)
-        return result
+        if isinstance(other, Op):
+            result = Op()
+            for coeff_a, ops_a in self.terms:
+                for coeff_b, ops_b in other.terms:
+                    result.add_term(coeff_a * coeff_b, ops_a + ops_b)
+            return result
+        elif isinstance(other, (int, float, complex)):
+            result = Op()
+            for coeff, ops in self.terms:
+                result.add_term(coeff * other, ops)
+            return result
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
 
     def apply(self, ci):
         out = np.zeros_like(ci, dtype=complex)
@@ -90,7 +98,7 @@ class Op:
         mask = 1 << orb_idx
         res = np.zeros_like(ci, dtype=complex)
         for det_idx, amp in enumerate(ci):
-            if amp == 0:
+            if abs(amp) < 1e-8:
                 continue
             occupied = bool(det_idx & mask)
             if is_creation and occupied:
@@ -145,7 +153,30 @@ class IdentityOp(Op):
     def __init__(self):
         super().__init__([(1.0, tuple())])
 
+class h1Op(Op):
+    def __init__(self, h1):
+        self.h1 = h1
+        terms = []
+        n_orb = h1.shape[0]
+        for p in range(n_orb):
+            for q in range(n_orb):
+                if abs(h1[p, q]) > 1e-8:
+                    # The operators are applied from front to back, so we need to reverse the order of creation and annihilation
+                    terms.append((h1[p, q], [("annihilate", p), ("create", q)]))
+        super().__init__(terms)
 
+class h2Op(Op):
+    def __init__(self, h2):
+        self.h2 = h2
+        terms = []
+        n_orb = h2.shape[0]
+        for p in range(n_orb):
+            for q in range(n_orb):
+                for r in range(n_orb):
+                    for s in range(n_orb):
+                        if abs(h2[p, q, r, s]) > 1e-8:
+                            terms.append((h2[p, q, r, s], [("annihilate", p), ("annihilate", q), ("create", r), ("create", s)]))
+        super().__init__(terms)
 
 import numpy as np
 import pytest
@@ -219,6 +250,19 @@ def test_simple_sum_of_ops_behaves_linearly():
     expected = 2 * ci + 3 * Op([(1, (("number", 0),))]).apply(ci)
     np.testing.assert_allclose(combined.apply(ci), expected)
 
+
+def test_hOp_behavior():
+    h1 = np.array([[0, 1], [0, 0]])
+    # h2 = np.zeros((2, 2, 2, 2))
+    h1_op = h1Op(h1)
+    # h2_op = h2Op(h2)
+
+    ci = np.array([0, 0, 1, 0], dtype=complex)
+    expected_h1 = np.array([0, -1, 0, 0], dtype=complex)
+    expected_h2 = np.zeros(4, dtype=complex)
+
+    np.testing.assert_allclose(h1_op.apply(ci), expected_h1)
+    # np.testing.assert_allclose(h2_op.apply(ci), expected_h2)
 
 if __name__ == "__main__":
     print("Running tests for Op class...")

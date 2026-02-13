@@ -66,6 +66,13 @@ frac = fracs[0]
 n = max(1, int(n_excitations * frac))
 a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
 i_idxs_selected = [i_idxs[i] for i in ordered_indices[:n]]
+norb = 4
+for a, i in zip (a_idxs_selected, i_idxs_selected):
+    print ("a, i = ", a, i)
+    errstr = 'a,i={},{} breaks sz symmetry'.format (a, i)
+    #print ("SV sum orb = ",np.sum(a // norb))
+    #print ("SV errstr = ", errstr)
+    assert (np.sum (a//norb) == np.sum (i//norb)), errstr
 
 # las_rdm2 = las.make_r
 print(f"\nFraction: {frac} | Number of excitations: {n}")
@@ -108,7 +115,7 @@ print("H matrix:\n")
 print_list_matrix(H)
 
 
-from helper.op import Op, IdentityOp, UOp
+from helper.op import Op, IdentityOp, UOp, h1Op, h2Op
 
 
 
@@ -150,39 +157,18 @@ h2e = lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas
 h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
 h2las = h2e
 
-class h1Op(Op):
-    def __init__(self, h1):
-        self.h1 = h1
-        terms = []
-        n_orb = h1.shape[0]
-        for p in range(n_orb):
-            for q in range(n_orb):
-                if abs(h1[p, q]) > 1e-8:
-                    terms.append((h1[p, q], [("create", p), ("annihilate", q)]))
-        super().__init__(terms)
-
-class h2Op(Op):
-    def __init__(self, h2):
-        self.h2 = h2
-        terms = []
-        n_orb = h2.shape[0]
-        for p in range(n_orb):
-            for q in range(n_orb):
-                for r in range(n_orb):
-                    for s in range(n_orb):
-                        if abs(h2[p, q, r, s]) > 1e-8:
-                            terms.append((h2[p, q, r, s], [("create", p), ("create", q), ("annihilate", s), ("annihilate", r)]))
-        super().__init__(terms)
-
-h1_op = h1Op(h1las)
-h2_op = h2Op(h2las)
-
 
 # now let's try evaluate <LAS | H | LAS >
 h = h1_op + h2_op
 H_LAS = h.apply(fcivec_vec)
 energy = np.dot(fcivec_vec.conj(), H_LAS)
 print(f"Energy from direct application of H operator: {energy}")
+
+
+
+h1t1 = grad.get_grad_h1t1([[2]], [[3]], las.make_casdm1s(), h1las)
+print(f"Gradient h1t1 sum: {np.sum(h1t1)}")
+
 
 #
 # for evaluate the S matrix, we iterate through all the pairs of excitations
