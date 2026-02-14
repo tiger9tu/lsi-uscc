@@ -162,7 +162,7 @@ class h1Op(Op):
             for q in range(n_orb):
                 if abs(h1[p, q]) > 1e-8:
                     # The operators are applied from front to back, so we need to reverse the order of creation and annihilation
-                    terms.append((h1[p, q], [("annihilate", p), ("create", q)]))
+                    terms.append((h1[p, q], [("annihilate", p), ("create", q)])) # This is not consistent with convention..
         super().__init__(terms)
 
 class h2Op(Op):
@@ -175,7 +175,7 @@ class h2Op(Op):
                 for r in range(n_orb):
                     for s in range(n_orb):
                         if abs(h2[p, q, r, s]) > 1e-8:
-                            terms.append((h2[p, q, r, s], [("annihilate", p), ("annihilate", q), ("create", r), ("create", s)]))
+                            terms.append((h2[p, q, r, s], [("annihilate", r), ("annihilate", s), ("create", q), ("create", p)]))
         super().__init__(terms)
 
 import numpy as np
