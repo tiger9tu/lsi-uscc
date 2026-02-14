@@ -128,8 +128,8 @@ class UOp(Op):
 
         terms = [
             (1.0, tuple()),
-            (s, [("create", a) for a in self.a_idx] +  [("annihilate", i) for i in self.i_idx]),
-            (-s, [("create", i) for i in self.i_idx] + [("annihilate", a) for a in self.a_idx]),
+            (s, [("annihilate", i) for i in self.i_idx] + [("create", a) for a in self.a_idx[::-1]]),
+            (-s,[("annihilate", a) for a in self.a_idx] + [("create", i) for i in self.i_idx[::-1]]),
         ]
         if len(self.a_idx) == 1:
             # na + ni - 2 na ni
@@ -140,11 +140,11 @@ class UOp(Op):
             # na1 na2 + ni1 ni2 - na1 na2 ni1 - na1 na2 ni2 - na1 ni1 ni2 - na2 ni1 ni2 + 2 na1 na2 ni1 ni2 
             terms.append((c, [("number", a) for a in self.a_idx]))
             terms.append((c, [("number", i) for i in self.i_idx]))
-            terms.append((-c, [("number", a) for a in self.a_idx] + [("number", self.i_idx[0])]))
-            terms.append((-c, [("number", a) for a in self.a_idx] + [("number", self.i_idx[1])]))
-            terms.append((-c, [("number", self.a_idx[0])] + [("number", i) for i in self.i_idx]))
-            terms.append((-c, [("number", self.a_idx[1])] + [("number", i) for i in self.i_idx]))
-            terms.append((2.0 * c, [("number", a) for a in self.a_idx] + [("number", i) for i in self.i_idx]))
+            terms.append((-c,[("number", self.i_idx[0])] + [("number", a) for a in self.a_idx]))
+            terms.append((-c, [("number", self.i_idx[1])] + [("number", a) for a in self.a_idx]))
+            terms.append((-c,[("number", i) for i in self.i_idx] + [("number", self.a_idx[0])]))
+            terms.append((-c,[("number", i) for i in self.i_idx]+ [("number", self.a_idx[1])]))
+            terms.append((2.0 * c,  [("number", i) for i in self.i_idx] + [("number", a) for a in self.a_idx]))
         else:
             raise NotImplementedError("Only supports single and double excitations for now")     
         super().__init__(terms)

@@ -14,13 +14,13 @@ def print_sparse_ci(ci, threshold=1e-5):
         if abs(ci[i]) > threshold:
             num_digits = len(bin(len(ci) - 1)) - 2
             print(f"ci[{i}] = {ci[i]:.6f}, i (binary) = {bin(i)[2:].zfill(num_digits)}")
-xyz = '''H      0.000000000000   0.000000000000   0.000000000000
-H      1.000000000000   0.000000000000   0.000000000000
-H      0.273746762116   2.195450598147   0.100000000000
-H      1.232912762116   1.895450598147  -0.100000000000'''
+pwd = Path(__file__).resolve().parent
+geom_path = pwd.parent / 'geom' / 'h4.xyz'
+with geom_path.open('r') as f:
+    xyz = f.read()
+
 # Initializing the molecule with RHF
 #===================================
-norb = 4
 ncas_f = (2,2)
 nelecas_f = (2,2)
 spin_sub_f = (1,1)
@@ -37,193 +37,176 @@ las = LASSCF (mf, ncas_f, nelecas_f, spin_sub=spin_sub_f, verbose=3)
 mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
 las.kernel (mo_loc)
 print ("LASSCF energy = ", las.e_tot)
-las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)  
-
-a_idxs = np.array([[5,1]])
-i_idxs = np.array([[6,0]])
-
-#Computing energy through the LAS-UCC kernel using selected excitations
-#==========================================================================================
-
-lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
-fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs, i_idxs)
-# mc_uscc.fcisolver.norb_f = ncas_f
-# mc_uscc.kernel(ci0=las_ci0_f)
-for a, i in zip (a_idxs, i_idxs):
-    print ("a, i = ", a, i)
-    errstr = 'a,i={},{} breaks sz symmetry'.format (a, i)
-    #print ("SV sum orb = ",np.sum(a // norb))
-    #print ("SV errstr = ", errstr)
-    assert (np.sum (a//norb) == np.sum (i//norb)), errstr
-
-print("las ci_f\n")
-print_list_matrix(las_ci0_f)
+las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
 
 
-psi = lasci_ominus1.LASUCCTrialState(fcisolver, las_ci0_f, norb = 4, norb_f = [2,2], nelec=[2,2])
-dpci = psi.dp_ci(las_ci0_f)
+cas = mcscf.CASCI (mf, sum(ncas_f), sum(nelecas_f))
+cas.mo_coeff = las.mo_coeff
+cas.kernel ()
+print ("CASCI energy = ", cas.e_tot)
 
-print("DP-CI")
-# print_list_matrix(dpci)
-for i in range(dpci.shape[0]):
-    for j in range(dpci.shape[1]):
-        if abs(dpci[i,j]) > 1e-5:
-            print(f"dpci[{i},{j}] = {dpci[i,j]:.6f}")
+
+mo_loc = las.localize_init_guess (frag_atom_list, mf.mo_coeff)
+las.kernel (mo_loc)
+print ("LASSCF energy = ", las.e_tot)
+las_ci0_f = cilas2f(las.ci, ncas_f, nelecas_f)
+#Getting gradient for all cluster excitations through LAS-UCCSD gradients, may use your desired epsilon for selection
+#====================================================================================================================
 
 mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
 mc_uscc.mo_coeff = las.mo_coeff
-
-# 
-# h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
-# h2eff = mc_uscc.get_h2eff() 
-# h = [e_core, h1eff, h2eff]
-# c, uc, huc = psi.hc_x (psi.x, h)[0:3]
-# uc, huc = uc.ravel (), huc.ravel ()
-# cu = uc.conj ()
-# cuuc = cu.dot (uc)
-# cuhuc = cu.dot (huc)
-# e_tot = cuhuc/cuuc
-# print("c\n")
-# print_sparse_ci(c.ravel(), threshold=1e-5)
-
-# from helper.op import Op, IdentityOp, UOp, h1Op, h2Op
-# assert np.allclose(c.ravel(), uc), "c and uc should be equal"
-# print(f"Verification: c == uc passed")
-
-# nmo = las.mo_coeff.shape[1]
-# ncas, ncore = las.ncas, las.ncore
-# nocc = ncore + ncas
-# h2e =  lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas+1)//2)).reshape (nmo, ncas, ncas, ncas)[ncore:nocc,:,:,:]
-# h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
-# h2las = h2e
-
-# h1lasspin = grad.get_h1e_spin(h1las)
-# h2lasspin = grad.get_eri_spin(h2las)
-# print_list_matrix(h2lasspin)
-
-
-
-# print("h2lasspin[2,5,3,7] = ", h2lasspin[2,5,3,7])
-
-# orgHop = h1Op(h1lasspin) + h2Op(h2lasspin) + e_core * IdentityOp()
-# HopC = orgHop.apply(c.ravel())
-# # assert np.allclose(HopC, huc.ravel()), "HopC should equal huc"
-# norm_diff = np.linalg.norm(HopC - c.ravel())
-
-
-
-# print("HopC\n")
-# print_sparse_ci(HopC)
-# print("huc\n")
-# print_sparse_ci(huc)
-
-# print(f"|| HopC - c || = {norm_diff:.6f}")
-
-# now let's try a simple h to see what's the problem
-# h1eff = np.zeros_like(h1eff)
-# h2eff = np.zeros_like(h2eff)
-# h1eff[0,1] = h1eff[1,0] = 1.0
-# h = [e_core, h1eff, h2eff]
-# c, uc, huc = psi.hc_x (np.zeros_like(psi.x), h)[0:3]
-# uc, huc = uc.ravel (), huc.ravel ()
-# cu = uc.conj ()
-# cuuc = cu.dot (uc)
-# cuhuc = cu.dot (huc)
-# e_tot = cuhuc/cuuc
-# print(f"With simple h, e_tot = {e_tot:.6f}")
-
-
-# def print_sparse_ci(ci, threshold=1e-5):
-#     for i in range(len(ci)):
-#         if abs(ci[i]) > threshold:
-#             num_digits = len(bin(len(ci) - 1)) - 2
-#             print(f"ci[{i}] = {ci[i]:.6f}, i (binary) = {bin(i)[2:].zfill(num_digits)}")
-# print("huc\n")
-# print_sparse_ci(huc)
-# print()
-
-
-# print("uc\n")
-# print_sparse_ci(uc)
-# print()
-# # simpleHOp =  get_uccsd_op(mol, a_idxs, i_idxs, norb=4, norb_f=[2,2], nelec=[2,2])
-# h1spin = grad.get_h1e_spin(h1eff)
-# print_list_matrix(h1spin)
-# # print("h1spin\n")
-# # print_list_matrix(h1spin)
-# from helper.op import Op, IdentityOp, UOp, h1Op
-# simpleHOp = h1Op(h1spin) + e_core * IdentityOp()
-# HopC = simpleHOp.apply(c.ravel())
-# print("HopC\n")
-# print_sparse_ci(HopC)
-
-# assert np.allclose(HopC, huc), "HopC should equal huc"
-# print("Assertion passed: HopC == huc")
-
-h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+h1eff,e_core = mc_uscc.get_h1eff(mc_uscc.mo_coeff)
 h2eff = mc_uscc.get_h2eff() 
-# test simple h2
-h1eff = np.zeros_like(h1eff)
-e_core = 0.0
-h2eff = np.zeros_like(h2eff)
-h2eff[1, 8]  =  h2eff[8, 1] = 1.0
-# (0,2) -> (1,3) excitation corresponds to h2eff[1,8] in chemist's notation
-h = [e_core, h1eff, h2eff]
-c, uc, huc = psi.hc_x (psi.x, h)[0:3]
-uc, huc = uc.ravel (), huc.ravel ()
-cu = uc.conj ()
-cuuc = cu.dot (uc)
-cuhuc = cu.dot (huc)
-e_tot = cuhuc/cuuc
-print("c\n")
-print_sparse_ci(c.ravel(), threshold=1e-5)
-
-print("huc\n")
-print_sparse_ci(huc)
-
-from helper.op import Op, IdentityOp, UOp, h1Op, h2Op
-assert np.allclose(c.ravel(), uc), "c and uc should be equal"
-print(f"Verification: c == uc passed")
+# print("h2eff = ", h2eff)
+print_list_matrix(h2eff, digits=3)
 
 nmo = las.mo_coeff.shape[1]
 ncas, ncore = las.ncas, las.ncore
 nocc = ncore + ncas
+h2e = lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas+1)//2)).reshape (nmo, ncas, ncas, ncas)[ncore:nocc,:,:,:]
+h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
+h2las = h2e
+h2lasspin = grad.get_eri_spin(h2las).transpose(3,0,2,1)
+print("h2las[0,1,2,3] = ", h2las[0,1,2,3]) # should = h2eff[8,1]
 
 
-h2efflas = las.get_h2eff() #.reshape (nmo*ncas,ncas*(ncas+1)//2)
+# print the hc
+h1eff,e_core= mc_uscc.get_h1eff(mc_uscc.mo_coeff)
+h2eff = mc_uscc.get_h2eff() 
+h = [e_core, h1eff, h2eff]
+a_idxs = np.array([[5,1]])
+i_idxs = np.array([[6,0]])
+fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs, i_idxs)
+psi = lasci_ominus1.LASUCCTrialState(fcisolver, las_ci0_f, norb = 4, norb_f = [2,2], nelec=[2,2])
+c, uc, huc = psi.hc_x (psi.x, h)[0:3]
+uc, huc = uc.ravel (), huc.ravel ()
+print("c\n")
+print_sparse_ci(c.ravel(), threshold=1e-5)
+print("huc\n")
+print_sparse_ci(huc)
 
-# (nmo, ncas*ncas*(ncas+1)//2)
+
 h2e =  lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas+1)//2)).reshape (nmo, ncas, ncas, ncas)[ncore:nocc,:,:,:]
-h2e = np.zeros_like(h2e)
-h2e[3,2,0,1] = 1.0
-# h2e[3,1,2,0] = 1.0
 h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
 h2las = h2e
 
 h1lasspin = grad.get_h1e_spin(h1las)
-h2lasspin = grad.get_eri_spin(h2las)
+h2lasspin = grad.get_eri_spin(h2las).transpose(3,0,2,1)
 
-# q,s,r,p -> p,q,r,s
-# h2lasspin_conventional = h2lasspin.transpose(3,0,2,1)
-for i in range(h2lasspin.shape[0]):
-    for j in range(h2lasspin.shape[1]):
-        for k in range(h2lasspin.shape[2]):
-            for l in range(h2lasspin.shape[3]):
-                if abs(h2lasspin[i,j,k,l]) > 1e-5:
-                    print(f"h2lasspin[{i},{j},{k},{l}] = {h2lasspin[i,j,k,l]:.6f}")
-
-h2lasspin = h2lasspin.transpose(3, 0, 2, 1)
-for i in range(h2lasspin.shape[0]):
-    for j in range(h2lasspin.shape[1]):
-        for k in range(h2lasspin.shape[2]):
-            for l in range(h2lasspin.shape[3]):
-                if abs(h2lasspin[i,j,k,l]) > 1e-5:
-                    print(f"h2lasspinTransposepqrs[{i},{j},{k},{l}] = {h2lasspin[i,j,k,l]:.6f}")
-# h1lasspin = np.zeros_like(h1lasspin)
-# h2lasspin = np.zeros_like(h2lasspin)
-# print_list_matrix(h2lasspin)
-# Hop = h1Op(h1lasspin) + h2Op(h2lasspin) + e_core * IdentityOp()
-Hop = 0.5 * h2Op(h2lasspin)
+from helper.op import Op, IdentityOp, UOp, h1Op, h2Op
+Hop = h1Op(h1lasspin) + 0.5 * h2Op(h2lasspin) + e_core * IdentityOp()
 HopC = Hop.apply(c.ravel())
 print("HopC\n")
 print_sparse_ci(HopC)
+
+assert np.allclose(HopC, huc), "c and uc should be equal"
+lscc_fci = FCISolver_CC(mol, a_idxs, i_idxs)
+lscc_fci.norb_f = ncas_f
+lscc_fci.a_idxs = a_idxs
+lscc_fci.i_idxs = i_idxs
+
+mc_uscc.fcisolver = lscc_fci
+mc_uscc.kernel(ci0=las_ci0_f)
+S = lscc_fci.S
+H = lscc_fci.H
+print("S\n")
+print_list_matrix(S)
+print("H\n")
+print_list_matrix(H)
+print("diagonalization coeffs\n")
+print(lscc_fci.lccsi)
+
+print("lscc energy = ", mc_uscc.e_tot)
+
+# Now we reproduce the same H and S through the Op class
+U1 = UOp(np.pi / 2,a_idxs[0], i_idxs[0])
+
+# verify U1c
+U1c = U1.apply(c.ravel())
+print("U1c\n")
+print_sparse_ci(U1c, threshold=1e-5)
+
+psi.x[1] = np.pi / 2
+c, uc, huc = psi.hc_x (psi.x, h)[0:3]
+uc, huc = uc.ravel (), huc.ravel ()
+print("uc\n")
+print_sparse_ci(uc, threshold=1e-5)
+
+
+
+# excitation_ops = [IdentityOp(), U1]
+# for i, op in enumerate(excitation_ops):
+#     for j, op2 in enumerate(excitation_ops):
+#         print(f"Computing H[{i},{j}] and S[{i},{j}]")
+#         # Compute the overlap S[i,j] = <0| op_i^dagger op_j |0>
+#         Ui_diagUj_c = op.dagger().apply(op2.apply(c.ravel()))
+#         Sij = np.vdot(c.ravel(), Ui_diagUj_c)
+#         print(f"S[{i},{j}] = {Sij:.6f}")
+
+#         Uidiag_H_Uj_c = op.dagger().apply(Hop.apply(op2.apply(c.ravel())))
+#         Hij = np.vdot(c.ravel(), Uidiag_H_Uj_c)
+#         print(f"H[{i},{j}] = {Hij:.6f}") 
+
+
+# Now lets' try diagonalize in the space of <AiHAj> instead of <UiHUj>
+A1terms = [
+    (1, [("annihilate", i) for i in i_idxs[0]] + [("create", a) for a in a_idxs[0][::-1]]),
+    (-1,[("annihilate", a) for a in a_idxs[0]] + [("create", i) for i in i_idxs[0][::-1]]),
+]
+A1 = Op(A1terms)
+excitation_ops = [IdentityOp(), A1]
+
+H = np.zeros((len(excitation_ops), len(excitation_ops)), dtype=np.complex128)
+S = np.zeros((len(excitation_ops), len(excitation_ops)), dtype=np.complex128)
+for i, op in enumerate(excitation_ops):
+    for j, op2 in enumerate(excitation_ops):
+        S[i,j] = np.vdot(c.ravel(), op.dagger().apply(op2.apply(c.ravel())))
+        H[i,j] = np.vdot(c.ravel(), op.dagger().apply(Hop.apply(op2.apply(c.ravel()))))
+
+# Diagonalize the generalized eigenvalue problem HSc = ESc
+eigenvalues, eigenvectors = np.linalg.eig(np.linalg.inv(S) @ H)
+print("Eigenvalues (energies):\n", eigenvalues)
+print("Eigenvectors:\n", eigenvectors)
+#     mc_uscc.fcisolver.norb_f = ncas_f
+#     mc_uscc.kernel(ci0=las_ci0_f)
+
+
+# all_g, g_sel, a_idxs, i_idxs = grad.get_grad_exact(las, epsilon=0.0)
+# gredients = np.array(g_sel)[:,0]
+# ordered_indices = np.argsort(-np.abs(gredients))
+# n_excitations = len(a_idxs)
+
+# fracs = [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08]
+# mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
+# mc_uscc.mo_coeff = las.mo_coeff
+
+# lscc_fci = None
+
+# for frac in fracs:
+#     n = max(1, int(n_excitations * frac))
+#     a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
+#     i_idxs_selected = [i_idxs[i] for i in ordered_indices[:n]]
+#     print(f"\nFraction: {frac} | Number of excitations: {n}")
+#     #Computing energy through the LAS-UCC kernel using selected excitations
+#     #==========================================================================================
+
+#     lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
+#     mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
+#     mc_uscc.fcisolver.norb_f = ncas_f
+#     mc_uscc.kernel(ci0=las_ci0_f)
+#     print("LASUSCCSD-VQE energy: {:.9f}".format(mc_uscc.e_tot))
+#     a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+#     i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
+#     # print("a_idxs_selected = ", a_idxs_selected)
+#     # t does not matter now, just to avoid error
+#     if lscc_fci is None:
+#         lscc_fci = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
+#     else:
+#         lscc_fci.a_idxs = a_idxs_selected
+#         lscc_fci.i_idxs = i_idxs_selected
+
+#     mc_uscc.fcisolver = lscc_fci
+
+#     mc_uscc.fcisolver.norb_f = ncas_f
+#     mc_uscc.kernel(ci0=las_ci0_f)
+#     print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
