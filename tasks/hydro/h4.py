@@ -160,21 +160,9 @@ print("Ground state energy: {:.9f}".format(ground_state_energy))
 print("Ground state coefficients:\n", ground_state_coeffs)
 
 
-# A1terms = [
-#     (1, [("annihilate", i) for i in i_idxs[0]] + [("create", a) for a in a_idxs[0][::-1]]),
-#     (-1,[("annihilate", a) for a in a_idxs[0]] + [("create", i) for i in i_idxs[0][::-1]]),
-# ]
-# A1 = Op(A1terms)
-# excitation_ops = [IdentityOp(), A1]
 
-# H = np.zeros((len(excitation_ops), len(excitation_ops)), dtype=np.complex128)
-# S = np.zeros((len(excitation_ops), len(excitation_ops)), dtype=np.complex128)
-# for i, op in enumerate(excitation_ops):
-#     for j, op2 in enumerate(excitation_ops):
-#         S[i,j] = np.vdot(c.ravel(), op.dagger().apply(op2.apply(c.ravel())))
-#         H[i,j] = np.vdot(c.ravel(), op.dagger().apply(Hop.apply(op2.apply(c.ravel()))))
+# # Now lets try the efficient implmentation of fragmented evaluation
+# def braAket(A, ci_f, norb_f):
+#     # A is a single string of annihilation and creation operators defined on full space
+#     # e.g. A = [("annihilate", 0), ("create", 4), ("annihilate", 1), ("create", 5)] = a_0^ c_4 a_1^ c_5
 
-# # Diagonalize the generalized eigenvalue problem HSc = ESc
-# eigenvalues, eigenvectors = np.linalg.eig(np.linalg.inv(S) @ H)
-# print("Eigenvalues (energies):\n", eigenvalues)
-# print("Eigenvectors:\n", eigenvectors)
