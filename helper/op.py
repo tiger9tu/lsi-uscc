@@ -222,9 +222,7 @@ class h2Op(Op):
 from pyscf import lib
 from mrh.exploratory.citools import grad
 
-def get_hop(las):
-    e_core = las.energy_nuc() # not sure about this 
-    print("Core energy from las.energy_nuc(): ", e_core)
+def get_hop(las, e_core):
     nmo = las.mo_coeff.shape[1]
     ncas, ncore = las.ncas, las.ncore
     nocc = ncore + ncas

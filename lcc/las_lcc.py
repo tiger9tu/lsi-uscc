@@ -108,17 +108,18 @@ def las_a_las_jwres(jwres_vaccum, jwres_occupied, ci_fs, frag_sorbs):
 
 class LASSolver_LSCC():
 
-    def __init__(self, las, a_idxs, i_idxs, frag_sorbs):
+    def __init__(self, las, a_idxs, i_idxs, frag_sorbs, e_core):
         self.las = las
         # add the first excitation to be identity operator 
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
         self.frag_sorbs = frag_sorbs
         self.nsorb = max([max(frag_sorb) for frag_sorb in self.frag_sorbs]) + 1
+        self.e_core = e_core
 
-    def kernel(self, h, norb_f, nelec_f, ci0_f):
+    def kernel(self, norb_f, nelec_f, ci0_f):
 
-        Hop = op.get_hop(self.las)
+        Hop = op.get_hop(self.las, self.e_core)
 
         Aops = [op.IdentityOp()] 
         for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
@@ -130,20 +131,22 @@ class LASSolver_LSCC():
 
         S = np.zeros((len(Aops), len(Aops)), dtype=np.complex128)
         for i, Ai in enumerate(Aops):
-            for j, Aj in enumerate(Aops):
+            for j, Aj in enumerate(Aops[:i+1]):
                 Aid_AjOp = Ai.dagger() * Aj
                 Sij = 0
                 for term in Aid_AjOp.terms:
                     coef = term[0]
                     Aterm = term[1]
-                    jwop_vaccum, jwop_occupied = jordan_wigner_res(Aterm,   self.nsorb) # it only has one term
+                    jwop_vaccum, jwop_occupied = jordan_wigner_res(Aterm,  self.nsorb) # it only has one term
                     Sij += coef * las_a_las_jwres(jwop_vaccum, jwop_occupied, ci0_f, self.frag_sorbs)
                 S[i,j] = Sij
+                S[j,i] = np.conj(Sij)
                                                                 
         H = np.zeros((len(Aops), len(Aops)), dtype=np.complex128)
         
         for i, Ai in enumerate(Aops):
-            for j, Aj in enumerate(Aops):   
+            for j, Aj in enumerate(Aops[:i+1]): 
+                # print(f"Evaluating H[{i},{j}]")  
                 # for future optimization we can only evaluate upper triangular part
                 Aid_H_AjOp = Ai.dagger() * Hop * Aj
                 hij = 0
@@ -155,6 +158,7 @@ class LASSolver_LSCC():
                     jwop_vaccum, jwop_occupied = jordan_wigner_res(Aterm, self.nsorb)
                     hij += coef * las_a_las_jwres(jwop_vaccum, jwop_occupied, ci0_f, self.frag_sorbs)
                 H[i,j] = hij
+                H[j,i] = np.conj(hij)
         
         # solve the generalized eigenvalue problem
         e, c, keep, w = noci_symmetric_orth(H, S)
