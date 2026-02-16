@@ -161,8 +161,98 @@ print("Ground state coefficients:\n", ground_state_coeffs)
 
 
 
-# # Now lets try the efficient implmentation of fragmented evaluation
+# # Now lets try the efficient  of fragmented evaluation
 # def braAket(A, ci_f, norb_f):
 #     # A is a single string of annihilation and creation operators defined on full space
 #     # e.g. A = [("annihilate", 0), ("create", 4), ("annihilate", 1), ("create", 5)] = a_0^ c_4 a_1^ c_5
+
+# Let's start first by only consider the a_idx: [5 1], i_idx: [6 0]
+only_a_idx = [5, 1] 
+only_i_idx = [6, 0]
+# a0'a1' i1'i0'
+# First perform jordan-wigner transformation implicitly to get the final per-site operators
+nspin_orbs = 8
+
+def jordan_wigner_res(ops, nspin_orbs):
+    # apply jordan-wigner transformation implicitly to get the final per-site result
+    # input: ops = (('annihilate', 7), ('annihilate', 5), ('create', 7), ('create', 7))
+    # output: res_vaccum and res_occupied, are list of length nspin_orbs with abs values 1 (unoccupied), 2 (occupied), 3 (vanish), and signs for the phase
+    # for example res_vaccum[3] = -2 means that when applying the jordan-wigner single site operators on |0>_3, we obtain -|1>_3
+    res_vaccum = [1 for _ in range(nspin_orbs)] # 1 -> unoccupied, 2 -> occupied, +- sign, +-3 -> vanish
+    res_occupied =[2 for _ in range(nspin_orbs)]
+    for op_type, op_idx in ops:
+        for res in [res_vaccum, res_occupied]:
+            for k in range(op_idx):
+                # s0,..,sk-1
+                phase = -1 if abs(res[k]) == 2 else 1
+                res[k] *= phase
+            # bk
+            if abs(res[op_idx]) == 2:
+                if op_type == "annihilate":
+                    res[op_idx] /= 2
+                else:
+                    res[op_idx] = 3
+            elif abs(res[op_idx]) == 1:
+                if op_type == "create":
+                    res[op_idx] *= 2
+                else:
+                    res[op_idx] = 3
+    
+    return res_vaccum, res_occupied
+
+def binarr(index, length):
+    return [int(b) for b in format(index, f'0{length}b')]
+
+def las_a_las_jwres(jwres_vaccum, jwres_occupied, ci_fs, frag_sorbs):
+    # evaluate the <LAS| aiajak'am... |LAS>
+    # input: jwres_vaccum and jwres_occupied are jw representations of operators
+    # ci_f is the fragmented CI vector 
+    inner_prod = 1
+    for i, ci_f in enumerate(ci_fs):
+        new_ci_f = np.zeros_like(ci_f.ravel())
+        for det_idx, amp in enumerate(ci_f.ravel()):
+            if abs(amp) < 1e-5:
+                continue
+            binary_array = binarr(det_idx , len(frag_sorbs[i]))
+            res_bin_array = np.zeros_like(binary_array)
+            coef = amp
+            for forb_idx, occ in enumerate(binary_array[::-1]):
+                orb_idx = frag_sorbs[i][forb_idx]
+                if occ == 0:
+                    res = jwres_vaccum[orb_idx]
+                else:
+                    res = jwres_occupied[orb_idx]
+                if res == 3:
+                    coef = 0
+                    break
+                if abs(res) == 1:
+                    res_bin_array[forb_idx] = 0
+                elif abs(res) == 2:
+                    res_bin_array[forb_idx] = 1
+                coef *= -1 if res < 0 else 1
+            
+            res_det_idx = int(''.join(map(str, res_bin_array[::-1])), 2)
+            new_ci_f[res_det_idx] += coef
+    
+        inner_prod *= np.vdot(ci_f.ravel(), new_ci_f.ravel())
+        if abs(inner_prod) < 1e-5:
+            return 0
+    return inner_prod
+
+
+# First try evaluate <A' H A> for only only_a_idx = [5, 1]  only_i_idx = [6, 0]
+frag_sorbs = [[0,1,4,5], [2,3,6,7]] # we have to generate frag_sorbs from frag_orbs
+valueAHA = 0
+
+tenpersent = len(Hop.terms) // 10
+for i, term in enumerate(Hop.terms):
+    # print("Evaluating term: ", terms)
+    hcoef = term[0]
+    jwres_vaccum, jwres_occupied = jordan_wigner_res(term[1], nspin_orbs)
+    valueAHA += hcoef * las_a_las_jwres(jwres_vaccum, jwres_occupied, las_ci0_f, frag_sorbs)
+    if (i+1) % tenpersent == 0:
+        print(f"Progress: {(i+1) / len(Hop.terms) * 100:.1f}%")
+
+
+print("Value of <A' H A> with only a_idx [5, 1] and i_idx [6, 0]: ", valueAHA)
 

@@ -227,8 +227,6 @@ if __name__ == '__main__':
     # to include the Identity operator
     # a_idxs_selected = []
     # i_idxs_selected = []
-    a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-    i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
     # print("a_idxs_selected = ", a_idxs_selected)
     # t does not matter now, just to avoid error
     mc_uscc.fcisolver = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected, t = np.pi / 2)

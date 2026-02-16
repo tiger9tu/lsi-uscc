@@ -21,6 +21,10 @@ class Op:
                     mapped = "annihilate"
                 elif kind == "annihilate":
                     mapped = "create"
+                elif kind == "just_create":
+                    mapped = "just_annihilate"
+                elif kind == "just_annihilate":
+                    mapped = "just_create"
                 else:
                     mapped = kind
                 rev_ops.append((mapped, idx))
@@ -74,8 +78,12 @@ class Op:
             return ci
         if kind == "number":
             return Op._apply_number(ci, orb_idx)
+        if kind == "sign":
+            return Op._apply_sign(ci, orb_idx)
         if kind in ("create", "annihilate"):
             return Op._apply_ladder(ci, orb_idx, kind == "create")
+        if kind in ("just_create", "just_annihilate"):
+            return Op._apply_ladder_no_phase(ci, orb_idx, kind == "just_create")
         raise ValueError(f"Unknown meta operator '{kind}'")
 
     @staticmethod
@@ -88,6 +96,20 @@ class Op:
         for det_idx, amp in enumerate(ci):
             if amp != 0 and det_idx & mask:
                 res[det_idx] = amp
+        return res
+
+    @staticmethod
+    def _apply_sign(ci, orb_idx):
+        # This is jordan-wigner like sign operator that gives -1 if the orbital is occupied and +1 if it's unoccupied
+        n_spin = Op._n_spin_orbitals(ci)
+        if orb_idx >= n_spin:
+            raise ValueError("Orbital index out of range")
+        mask = 1 << orb_idx
+        res = np.zeros_like(ci, dtype=complex)
+        for det_idx, amp in enumerate(ci):
+            if amp != 0:
+                phase = 1 if (det_idx & mask) else -1
+                res[det_idx] = phase * amp
         return res
 
     @staticmethod
@@ -108,6 +130,25 @@ class Op:
             phase = -1 if bin(det_idx & (mask - 1)).count("1") % 2 else 1
             new_det = (det_idx | mask) if is_creation else (det_idx & ~mask)
             res[new_det] += phase * amp
+        return res
+
+    @staticmethod
+    def _apply_ladder_no_phase(ci, orb_idx, is_creation):
+        n_spin = Op._n_spin_orbitals(ci)
+        if orb_idx >= n_spin:
+            raise ValueError("Orbital index out of range")
+        mask = 1 << orb_idx
+        res = np.zeros_like(ci, dtype=complex)
+        for det_idx, amp in enumerate(ci):
+            if abs(amp) < 1e-8:
+                continue
+            occupied = bool(det_idx & mask)
+            if is_creation and occupied:
+                continue
+            if (not is_creation) and (not occupied):
+                continue
+            new_det = (det_idx | mask) if is_creation else (det_idx & ~mask)
+            res[new_det] += amp
         return res
 
     @staticmethod
@@ -151,7 +192,7 @@ class UOp(Op):
 
 class IdentityOp(Op):
     def __init__(self):
-        super().__init__([(1.0, tuple())])
+        super().__init__([(1.0, [("identity", 0)])])
 
 class h1Op(Op):
     def __init__(self, h1):
@@ -177,6 +218,24 @@ class h2Op(Op):
                         if abs(h2[p, q, r, s]) > 1e-8:
                             terms.append((h2[p, q, r, s], [("annihilate", r), ("annihilate", s), ("create", q), ("create", p)]))
         super().__init__(terms)
+
+from pyscf import lib
+from mrh.exploratory.citools import grad
+
+def get_hop(las):
+    e_core = las.energy_nuc() # not sure about this 
+    print("Core energy from las.energy_nuc(): ", e_core)
+    nmo = las.mo_coeff.shape[1]
+    ncas, ncore = las.ncas, las.ncore
+    nocc = ncore + ncas
+    h2e =  lib.numpy_helper.unpack_tril (las.get_h2eff().reshape (nmo*ncas,ncas*(ncas+1)//2)).reshape (nmo, ncas, ncas, ncas)[ncore:nocc,:,:,:]
+    h1las, h0las = las.h1e_for_cas(mo_coeff=las.mo_coeff)
+    h2las = h2e
+
+    h1lasspin = grad.get_h1e_spin(h1las)
+    h2lasspin = grad.get_eri_spin(h2las).transpose(3,0,2,1)
+
+    return h1Op(h1lasspin) + 0.5 * h2Op(h2lasspin) + e_core * IdentityOp()
 
 import numpy as np
 import pytest
