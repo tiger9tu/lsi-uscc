@@ -1,6 +1,7 @@
 from mrh.my_pyscf.lassi import LASSI
 from mrh.my_pyscf.lassi.spaces import spin_shuffle, spin_shuffle_ci
 from mrh.my_pyscf.mcscf.addons import state_average_n_mix, get_h1e_zipped_fcisolver
+from mrh.my_pyscf.mcscf.productstate import ImpureProductStateFCISolver
 import numpy as np
 from pyscf.fci import addons
 from pyscf.csf_fci import csf_solver
@@ -15,7 +16,7 @@ class LASSI_LSCC (LASSI):
         # a_idxs and i_idxs are spinless creation and annihilation operators
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
-        self.ci0 = deepcopy(las.ci)
+        self.ci = las.ci
 
         LASSI.__init__(self, las, opt=opt, **kwargs)
 
@@ -33,7 +34,7 @@ class LASSI_LSCC (LASSI):
         # we ignore the sign factor, which is not important
         # since the indexing of all the operators differ, we can shuffle them freely
         # ci0 = deepcopy(self.ci0)
-        Aci = deepcopy(self.ci0)
+        Aci = deepcopy([frag_ci[0] for frag_ci in self.ci])
         frag_ops = [[] for _ in range(len(self.ci))]
 
         for op_type, idx_list in [('ann', i_idx), ('cre', a_idx[::-1])]:
@@ -45,10 +46,10 @@ class LASSI_LSCC (LASSI):
                 frag_ops[frag_idx].append((op_type, idx_in_frag, spin))
         
         nelecas = []
-        for i, ci_f in enumerate(self.ci0):
+        for i, ci_f in enumerate(Aci):
             if len(frag_ops[i]) == 0:
                 continue
-            ci_f_new, (neleca, nelecb) = apply_operator_string_fci(ci_f[0], self.nelecas[i], self.nelecas_sub[i], frag_ops[i])
+            ci_f_new, (neleca, nelecb) = apply_operator_string_fci(ci_f, self.nelecas[i], self.nelecas_sub[i], frag_ops[i])
             if ci_f_new is None or np.all(ci_f_new == 0):
                 return None, None  # invalid excitation gives zero
             Aci[i] = ci_f_new
@@ -56,58 +57,100 @@ class LASSI_LSCC (LASSI):
 
         return Aci, nelecas
 
+    def get_e_states(self):
+        las = self._las
+        # h1eff, energy_core = las.h1e_for_cas (mo_coeff=mo_coeff, ncas=las.ncas, ncore=las.ncore)
+        h1eff, energy_core = las.h1e_for_cas ()
+        # eri_cas = las.get_h2cas (mo_coeff) 
+        eri_cas = las.get_h2cas () 
+        e_states = np.zeros(self.nroots)
+        for state in range (self.nroots):
+            fcisolvers = [b.fcisolvers[state] for b in self.fciboxes]
+            ci0_i = [[c[state]] for c in self.ci]
+            solver = ImpureProductStateFCISolver (fcisolvers)
+            # norb_f and nelec_f are just the original ones, later it will be combined with fcisolver for
+            # the perticular state to get the nelec for that state
+            norb_f = las.ncas_sub
+            nelec_f = las.nelecas_sub
+            energy_elec = solver.energy_elec (h1eff, eri_cas, ci0_i, norb_f, nelec_f, ecore=energy_core)
+            # e_cas[state] = energy_elec
+            e_states[state] = energy_elec + energy_core
+
+        print("e_states = ", e_states)
+        return e_states
+
     def prepare_states_(self):
         # self.converged, las = self.prepare_states ()
         #self.__dict__.update(las.__dict__) # Unsafe
         self.fciboxes = [[] for _ in range(self.nfrags)]
 
-        def _get_csfsolver(nelecas_sub_fi):
-            fcisolver = csf_solver(self.mol, smult=nelecas_sub_fi[0] - nelecas_sub_fi[1])
-            fcisolver.nelec = nelecas_sub_fi
-            fcisolver.norb = self.nelecas[0]  # Note: adjust index if needed
-            fcisolver.spin = nelecas_sub_fi[0] - nelecas_sub_fi[1]
-            fcisolver.smult = abs(fcisolver.spin) + 1
-            return fcisolver
+        # def _get_csfsolver(nelecas_sub_fi):
+        #     fcisolver = csf_solver(self.mol, smult=nelecas_sub_fi[0] - nelecas_sub_fi[1])
+        #     fcisolver.nelec = nelecas_sub_fi
+        #     fcisolver.norb = self.nelecas[0]  # Note: adjust index if needed
+        #     fcisolver.spin = nelecas_sub_fi[0] - nelecas_sub_fi[1]
+        #     fcisolver.smult = abs(fcisolver.spin) + 1
+        #     return fcisolver
 
         # Add the original las state
-        fciboxes_list = [[_get_csfsolver(nelecas_sub_fi)] for nelecas_sub_fi in self.nelecas_sub]
+        # fciboxes_list = [[_get_csfsolver(nelecas_sub_fi)] for nelecas_sub_fi in self.nelecas_sub]
         # nelecas_sub_buffer = [[] for _ in range(self.nfrags)]
         # for fi in range(self.nfrags):
         #      nelecas_sub_buffer[fi].append(deepcopy(self.nelecas_sub[fi]))
+        max_nroots = len(self.a_idxs) + 1
+        charges = np.zeros ((max_nroots, self.nfrags), dtype=np.int32)
+        spins = np.asarray ([[n[0]-n[1] for n in self.nelecas_sub] for i in range(max_nroots)]) 
+        smults = np.abs (spins)+1 
+        wfnsyms = wfnsyms = np.zeros ((max_nroots, self.nfrags), dtype=np.int32)
 
-        for rooti, (a_idx, i_idx) in enumerate(zip(self.a_idxs, self.i_idxs)):
+        lsi_nelecas_sub = [self._las.nelecas_sub]  # original state is the first one
+        self.nroots = 1
+        for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
             Aci, nelecas_sub = self.getAci(a_idx, i_idx)
             if Aci is None:
                 # this means the excitation is invalid (e.g. annihilating from empty state or creating beyond full occupation)
                 continue
+            
             for fi, ci_f in enumerate(Aci):
                 if ci_f is not None:
+                    
                     self.ci[fi].append(ci_f)
+                    charges[self.nroots, fi] = self.nelecas[fi] - sum(nelecas_sub[fi])
+                    spins[self.nroots, fi] = nelecas_sub[fi][0] - nelecas_sub[fi][1]
+                    smults[self.nroots, fi] = abs(spins[self.nroots, fi]) + 1
+                    # wfnsyms[rooti+1, fi] = 0  # TODO: determine the correct symmetry
                     # fcisolver = self._las._init_fcibox(None, self.nelecas_sub[fi])
-                    fcisolver = _get_csfsolver(nelecas_sub[fi])
-                    fcisolver.charge = self.nelecas[fi] - sum(nelecas_sub[fi]) 
-                    fcisolver.spin = self.nelecas_sub[fi][0] - self.nelecas_sub[fi][1]
-                    fcisolver.smult = abs(fcisolver.spin) + 1
-                    fciboxes_list[fi].append(fcisolver)
+                    # fcisolver = _get_csfsolver(nelecas_sub[fi])
+                    # fcisolver.charge = self.nelecas[fi] - sum(nelecas_sub[fi]) 
+                    # fcisolver.spin = self.nelecas_sub[fi][0] - self.nelecas_sub[fi][1]
+                    # fcisolver.smult = abs(fcisolver.spin) + 1
+                    # fciboxes_list[fi].append(fcisolver)
                     # nelecas_sub_buffer[fi].append(nelecas_sub[fi])
+            lsi_nelecas_sub.append(nelecas_sub)
+            self.nroots += 1
+        print("nroots prepared:", self.nroots)
+        charges = charges[:self.nroots]
+        spins = spins[:self.nroots]
+        smults = smults[:self.nroots]
+        wfnsyms = wfnsyms[:self.nroots]
+        self.weights = np.zeros(self.nroots)
+        self.weights[0] = 1.0  # original state has weight 1,
+        
+
+
 
         # self.nelecas_sub = [[np.array(x) for x in nelecas_sub_buffer[fi]] for fi in range(self.nfrags)]
 
-        for fi in range(self.nfrags):
-            self.fciboxes[fi] = get_h1e_zipped_fcisolver(state_average_n_mix (self._las, fciboxes_list[fi], [1.0] + [0.0] * (len(fciboxes_list[fi]) - 1)).fcisolver)
+        # for fi in range(self.nfrags):
+        #     self.fciboxes[fi] = get_h1e_zipped_fcisolver(state_average_n_mix (self._las, fciboxes_list[fi], [1.0] + [0.0] * (len(fciboxes_list[fi]) - 1)).fcisolver)
             
-        # def _init_fcibox (self, smult, nel): 
-        #     s = csf_solver (self.mol, smult=smult)
-        #     s.spin = nel[0] - nel[1] 
-        #     return get_h1e_zipped_fcisolver (state_average_n_mix (self, [s], [1.0]).fcisolver)
-         
-        # self.fciboxes = las.fciboxes
-        # self.ci = las.ci
-        self.nroots = len(self.ci[0])
-        self.weights = np.zeros(self.nroots)
-        self.weights[0] = 1.0
-        # self.si = np.zeros(self.nroots)
-        # self.e_states = self.energy_tot()
+
+        self.fciboxes = [get_h1e_zipped_fcisolver (state_average_n_mix (
+            self._las, [csf_solver (las.mol, smult=s2p1).set (charge=c, spin=m2, wfnsym=ir)
+              for c, m2, s2p1, ir in zip (c_r, m2_r, s2p1_r, ir_r)], self.weights).fcisolver)
+                for c_r, m2_r, s2p1_r, ir_r in zip (charges.T, spins.T, smults.T, wfnsyms.T)]    
+                # self.e_states 
+        self.e_states = self.get_e_states()   
 
     def kernel (self, **kwargs):
         self.prepare_states_()
@@ -173,9 +216,14 @@ if __name__ == "__main__":
     a_idxs_selected = [a_idxs_selected[i] for i in sorted_indices] 
     i_idxs_selected = [i_idxs_selected[i] for i in sorted_indices]
 
-    # debug
-    # a_idxs_selected = [[4,0]]
-    # i_idxs_selected = [[7,3]]
+
+    # # debug
+    # a_idxs_selected = a_idxs_selected[17:19]
+    # i_idxs_selected = i_idxs_selected[17:19]
+
+    # print("Selected excitations (a_idx, i_idx):")
+    # for a_idx, i_idx in zip(a_idxs_selected, i_idxs_selected):
+    #     print(f"  a_idx: {a_idx}, i_idx: {i_idx}")
 
     lsi_lscc = LASSI_LSCC(las, a_idxs_selected, i_idxs_selected, frag_orbs=frag_atom_list)
     e_roots, si_rq = lsi_lscc.kernel()
