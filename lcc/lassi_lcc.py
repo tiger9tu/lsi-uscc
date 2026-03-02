@@ -97,7 +97,7 @@ class LASSI_LSCC (LASSI):
         # nelecas_sub_buffer = [[] for _ in range(self.nfrags)]
         # for fi in range(self.nfrags):
         #      nelecas_sub_buffer[fi].append(deepcopy(self.nelecas_sub[fi]))
-        max_nroots = len(self.a_idxs) + 1
+        max_nroots = 2*len(self.a_idxs) + 1
         charges = np.zeros ((max_nroots, self.nfrags), dtype=np.int32)
         spins = np.asarray ([[n[0]-n[1] for n in self.nelecas_sub] for i in range(max_nroots)]) 
         smults = np.abs (spins)+1 
@@ -107,27 +107,18 @@ class LASSI_LSCC (LASSI):
         self.nroots = 1
         for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
             Aci, nelecas_sub = self.getAci(a_idx, i_idx)
-            if Aci is None:
-                # this means the excitation is invalid (e.g. annihilating from empty state or creating beyond full occupation)
-                continue
-            
-            for fi, ci_f in enumerate(Aci):
-                if ci_f is not None:
-                    
-                    self.ci[fi].append(ci_f)
-                    charges[self.nroots, fi] = self.nelecas[fi] - sum(nelecas_sub[fi])
-                    spins[self.nroots, fi] = nelecas_sub[fi][0] - nelecas_sub[fi][1]
-                    smults[self.nroots, fi] = abs(spins[self.nroots, fi]) + 1
-                    # wfnsyms[rooti+1, fi] = 0  # TODO: determine the correct symmetry
-                    # fcisolver = self._las._init_fcibox(None, self.nelecas_sub[fi])
-                    # fcisolver = _get_csfsolver(nelecas_sub[fi])
-                    # fcisolver.charge = self.nelecas[fi] - sum(nelecas_sub[fi]) 
-                    # fcisolver.spin = self.nelecas_sub[fi][0] - self.nelecas_sub[fi][1]
-                    # fcisolver.smult = abs(fcisolver.spin) + 1
-                    # fciboxes_list[fi].append(fcisolver)
-                    # nelecas_sub_buffer[fi].append(nelecas_sub[fi])
-            lsi_nelecas_sub.append(nelecas_sub)
-            self.nroots += 1
+            A_dagger_ci, nelecas_sub_dagger = self.getAci(i_idx, a_idx)
+
+            for ci, nelecas_sub in zip([Aci, A_dagger_ci], [nelecas_sub, nelecas_sub_dagger]):
+                if ci is not None:
+                    for fi, ci_f in enumerate(ci):
+                        self.ci[fi].append(ci_f)
+                        charges[self.nroots, fi] = self.nelecas[fi] - sum(nelecas_sub[fi])
+                        spins[self.nroots, fi] = nelecas_sub[fi][0] - nelecas_sub[fi][1]
+                        smults[self.nroots, fi] = abs(spins[self.nroots, fi]) + 1    
+                    lsi_nelecas_sub.append(nelecas_sub)
+                    self.nroots += 1
+
         print("nroots prepared:", self.nroots)
         charges = charges[:self.nroots]
         spins = spins[:self.nroots]
