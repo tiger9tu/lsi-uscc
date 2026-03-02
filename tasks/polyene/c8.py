@@ -8,7 +8,11 @@ from mrh.exploratory.citools import grad, lasci_ominus1
 from lcc.lcc_solver import FCISolver_CC
 from helper.util import print_list_matrix, get_sorted_excitations, cilas2f
 
+
 from pathlib import Path
+from time import time
+from copy import deepcopy
+from lcc.lassi_lcc import LASSI_LSCC
 
 pwd = Path(__file__).resolve().parent
 geom_path = pwd.parent / 'geom' / 'c8.xyz'
@@ -48,7 +52,7 @@ gredients = np.array(g_sel)[:,0]
 ordered_indices = np.argsort(-np.abs(gredients))
 n_excitations = len(a_idxs)
 
-fracs = [0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08]
+fracs = [0.02]
 mc_uscc = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f))
 mc_uscc.mo_coeff = las.mo_coeff
 
@@ -59,26 +63,10 @@ for frac in fracs:
     a_idxs_selected = [a_idxs[i] for i in ordered_indices[:n]]
     i_idxs_selected = [i_idxs[i] for i in ordered_indices[:n]]
     print(f"\nFraction: {frac} | Number of excitations: {n}")
-    #Computing energy through the LAS-UCC kernel using selected excitations
-    #==========================================================================================
 
-    lasci_ominus1.GLOBAL_MAX_CYCLE = 15000
-    mc_uscc.fcisolver = lasuccsd.FCISolver_USCC(mol, a_idxs_selected, i_idxs_selected)
-    mc_uscc.fcisolver.norb_f = ncas_f
-    mc_uscc.kernel(ci0=las_ci0_f)
-    print("LASUSCCSD-VQE energy: {:.9f}".format(mc_uscc.e_tot))
-    a_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-    i_idxs_selected.insert(0, np.array([0], dtype=np.uint8))
-    # print("a_idxs_selected = ", a_idxs_selected)
-    # t does not matter now, just to avoid error
-    if lscc_fci is None:
-        lscc_fci = FCISolver_CC(mol, a_idxs_selected, i_idxs_selected)
-    else:
-        lscc_fci.a_idxs = a_idxs_selected
-        lscc_fci.i_idxs = i_idxs_selected
-
-    mc_uscc.fcisolver = lscc_fci
-
-    mc_uscc.fcisolver.norb_f = ncas_f
-    mc_uscc.kernel(ci0=las_ci0_f)
-    print("LASUSCCSD-CC energy: {:.9f}".format(mc_uscc.e_tot))
+    tmplas = deepcopy(las)
+    lsi_lscc = LASSI_LSCC(tmplas, a_idxs_selected, i_idxs_selected, frag_orbs=frag_atom_list)
+    start_time = time()
+    e_roots, si_rq = lsi_lscc.kernel()
+    print ("LASSI-LSCC energy =", e_roots[0])
+    print("Time taken: {:.2f} seconds".format(time() - start_time))

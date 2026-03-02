@@ -127,7 +127,10 @@ def apply_operator_string_fci(ci0, norb, neleca_nelecb, ops):
                     return None, (neleca, nelecb)  # creating beyond full occupation gives zero
                 ci = fci_addons.cre_b(ci, norb, (neleca, nelecb), orb)
                 nelecb += 1
-                
+
+        # Check if CI is effectively zero (all elements below threshold)
+        if np.max(np.abs(ci)) < 1e-10:
+            return None, (neleca, nelecb)
 
         # Keep ci as a 2D array (addons already return 2D, but this guards odd inputs)
         ci = np.asarray(ci)

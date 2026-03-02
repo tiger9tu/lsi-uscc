@@ -26,7 +26,7 @@ class LASSI_LSCC (LASSI):
         # we return A|psi>, A'|psi>
         
         frag_orbs_start = [0]
-        for nelecf in self.nelecas[:-1]:
+        for nelecf in self.ncas_sub[:-1]:
             frag_orbs_start.append(frag_orbs_start[-1] + nelecf)
         
 
@@ -45,17 +45,17 @@ class LASSI_LSCC (LASSI):
                 idx_in_frag = spatial - frag_orbs_start[frag_idx]
                 frag_ops[frag_idx].append((op_type, idx_in_frag, spin))
         
-        nelecas = []
+        nelecas_sub = deepcopy(self.nelecas_sub)
         for i, ci_f in enumerate(Aci):
             if len(frag_ops[i]) == 0:
                 continue
-            ci_f_new, (neleca, nelecb) = apply_operator_string_fci(ci_f, self.nelecas[i], self.nelecas_sub[i], frag_ops[i])
+            ci_f_new, (neleca, nelecb) = apply_operator_string_fci(ci_f, self.ncas_sub[i], self.nelecas_sub[i], frag_ops[i])
             if ci_f_new is None or np.all(ci_f_new == 0):
                 return None, None  # invalid excitation gives zero
             Aci[i] = ci_f_new
-            nelecas.append((neleca, nelecb))
+            nelecas_sub[i] = (neleca, nelecb)
 
-        return Aci, nelecas
+        return Aci, nelecas_sub
 
     def get_e_states(self):
         las = self._las
@@ -103,7 +103,7 @@ class LASSI_LSCC (LASSI):
         smults = np.abs (spins)+1 
         wfnsyms = wfnsyms = np.zeros ((max_nroots, self.nfrags), dtype=np.int32)
 
-        lsi_nelecas_sub = [self._las.nelecas_sub]  # original state is the first one
+        lsi_nelecas_sub = [self.nelecas_sub]  # original state is the first one
         self.nroots = 1
         for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
             Aci, nelecas_sub = self.getAci(a_idx, i_idx)
@@ -113,7 +113,7 @@ class LASSI_LSCC (LASSI):
                 if ci is not None:
                     for fi, ci_f in enumerate(ci):
                         self.ci[fi].append(ci_f)
-                        charges[self.nroots, fi] = self.nelecas[fi] - sum(nelecas_sub[fi])
+                        charges[self.nroots, fi] = self.ncas_sub[fi] - sum(nelecas_sub[fi])
                         spins[self.nroots, fi] = nelecas_sub[fi][0] - nelecas_sub[fi][1]
                         smults[self.nroots, fi] = abs(spins[self.nroots, fi]) + 1    
                     lsi_nelecas_sub.append(nelecas_sub)
@@ -137,11 +137,11 @@ class LASSI_LSCC (LASSI):
             
 
         self.fciboxes = [get_h1e_zipped_fcisolver (state_average_n_mix (
-            self._las, [csf_solver (las.mol, smult=s2p1).set (charge=c, spin=m2, wfnsym=ir)
+            self._las, [csf_solver (self._las.mol, smult=s2p1).set (charge=c, spin=m2, wfnsym=ir)
               for c, m2, s2p1, ir in zip (c_r, m2_r, s2p1_r, ir_r)], self.weights).fcisolver)
                 for c_r, m2_r, s2p1_r, ir_r in zip (charges.T, spins.T, smults.T, wfnsyms.T)]    
                 # self.e_states 
-        self.e_states = self.get_e_states()   
+        # self.e_states = self.get_e_states()   # yeah indeed this is not necessary
 
     def kernel (self, **kwargs):
         self.prepare_states_()
@@ -208,14 +208,7 @@ if __name__ == "__main__":
     i_idxs_selected = [i_idxs_selected[i] for i in sorted_indices]
 
 
-    # # debug
-    # a_idxs_selected = a_idxs_selected[17:19]
-    # i_idxs_selected = i_idxs_selected[17:19]
-
-    # print("Selected excitations (a_idx, i_idx):")
-    # for a_idx, i_idx in zip(a_idxs_selected, i_idxs_selected):
-    #     print(f"  a_idx: {a_idx}, i_idx: {i_idx}")
-
     lsi_lscc = LASSI_LSCC(las, a_idxs_selected, i_idxs_selected, frag_orbs=frag_atom_list)
     e_roots, si_rq = lsi_lscc.kernel()
     print ("LASSI-LSCC energy =", e_roots[0])
+    # print("ground state si vector =", si_rq[:,0])
