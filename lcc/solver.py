@@ -35,7 +35,7 @@ class LSI_LUSCC(LASSI):
     """
 
     def __init__(self, las_or_lsi, a_idxs, i_idxs,
-                 state=0, threshold=0.01, lindep_thresh=None, opt=1, **kwargs):
+                 state=0, threshold=0.01, top_m=None, lindep_thresh=None, opt=1, **kwargs):
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
 
@@ -44,6 +44,7 @@ class LSI_LUSCC(LASSI):
             self._ref_lsi = las_or_lsi
             self._lsi_state = state
             self._si_threshold = threshold
+            self._top_m = top_m  # if set, select top-m by |ci| regardless of threshold
             las = las_or_lsi._las
             # lsi-luscc generates many near-degenerate states; tighter lindep
             # threshold is needed to avoid a near-singular orthogonal basis.
@@ -51,6 +52,7 @@ class LSI_LUSCC(LASSI):
         else:
             # las-luscc: bare LAS object (single-root special case)
             self._ref_lsi = None
+            self._top_m = None
             self._lindep_thresh = lindep_thresh if lindep_thresh is not None else 1e-5
             las = las_or_lsi
 
@@ -64,11 +66,16 @@ class LSI_LUSCC(LASSI):
         """Return indices of significant LAS components for the reference state."""
         if self._ref_lsi is not None and self._ref_lsi.si is not None:
             si_vec = self._ref_lsi.si[:, self._lsi_state]
-            sig_indices = [j for j in range(len(si_vec))
-                           if abs(si_vec[j]) > self._si_threshold]
-            if len(sig_indices) == 0:
-                # Fall back to dominant component
-                sig_indices = [int(np.argmax(np.abs(si_vec)))]
+            if self._top_m is not None:
+                # Count-based: select top-m by |ci|
+                m = min(self._top_m, len(si_vec))
+                sig_indices = np.argsort(-np.abs(si_vec))[:m].tolist()
+            else:
+                sig_indices = [j for j in range(len(si_vec))
+                               if abs(si_vec[j]) > self._si_threshold]
+                if len(sig_indices) == 0:
+                    # Fall back to dominant component
+                    sig_indices = [int(np.argmax(np.abs(si_vec)))]
         else:
             # Single-root case: only root 0
             sig_indices = [0]

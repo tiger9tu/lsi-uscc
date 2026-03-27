@@ -9,32 +9,41 @@ from pathlib import Path
 from time import time
 
 # ── 1. System parameters ───────────────────────────────────────────────────
-FRACS = [0.05, 0.10, 0.15, 0.20]
+# Set DIHEDRAL to the desired C=C dihedral angle: 1, 60, 90, 120, or 180
+DIHEDRAL = 90
+FRACS = [0.01, 0.02, 0.03, 0.04]
 
-ncas_f      = (2, 2, 2, 2, 2)
-nelecas_f   = (2, 2, 2, 2, 2)
-spin_sub_f  = (1, 1, 1, 1, 1)
-frag_atom_list = [[0, 2], [10, 12], [18, 19], [13, 11], [3, 1]]
+ncas_f      = (4, 2, 4)
+nelecas_f   = (4, 2, 4)
+spin_sub_f  = (1, 1, 1)
+frag_atom_list = [
+    [1, 2, 3, 4, 5, 6, 15, 16, 17, 18, 19],
+    [0, 7, 14, 20],
+    [8, 9, 10, 11, 12, 13, 21, 22, 23, 24, 25],
+]
 basis   = '6-31g'
 verbose = 3
 
 pwd = Path(__file__).resolve().parent
-geom_path = pwd.parent / 'geom' / 'c10.xyz'
-log_path  = pwd / 'data' / 'c10.log'
+geom_name = f'stil{DIHEDRAL:03d}' if DIHEDRAL == 1 else f'stil{DIHEDRAL}'
+geom_path = pwd / 'geom' / f'{geom_name}.xyz'
+log_path  = pwd / 'data'  / f'{geom_name}.log'
 with geom_path.open('r') as f:
     xyz = f.read()
 
 # ── 2. Molecule + RHF ──────────────────────────────────────────────────────
-mol = gto.M(atom=xyz, basis=basis, output=log_path, verbose=verbose)
+mol = gto.M(atom=xyz, basis=basis, output=str(log_path), verbose=verbose)
 mf = scf.RHF(mol).run()
+
+# Reference CASCI
+cas = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f)).run()
+print("CASCI energy =", cas.e_tot)
 
 # ── 3. LASSCF ──────────────────────────────────────────────────────────────
 las = LASSCF(mf, ncas_f, nelecas_f, spin_sub=spin_sub_f, verbose=verbose)
 mo_loc = las.localize_init_guess(frag_atom_list, mf.mo_coeff)
-t0 = time()
 las.kernel(mo_loc)
 print("LASSCF energy =", las.e_tot)
-print("LASSCF time: {:.2f} s".format(time() - t0))
 
 # ── 4. LASSIS (reference) ──────────────────────────────────────────────────
 lsi = lassi.LASSIS(las)

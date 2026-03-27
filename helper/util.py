@@ -64,33 +64,6 @@ def cilas2f(lasci, norb_f, nelec_f):
     return ci_f
 
 
-# def get_sorted_excitations(las, epsilon=0.0, fraction=None, truncated = False, verbose=0):
-
-#     # select excitations based on fraction if provided
-#     # if there are multiple excitations with the same gradient magnitude at the cutoff,
-#     # all such excitations will be included
-#     if fraction is not None:
-#         g_all, _, _, _ = grad.get_grad_exact(las, epsilon=0.0)
-
-#         sortg = np.sort(np.abs(g_all))
-#         if verbose > 2:
-#             print("Total number of excitations:", len(g_all))
-#         n = len(sortg)
-#         k = int(np.floor(fraction * n))
-#         k = min(max(k, 1), n)
-#         epsilon = sortg[-k] - 1e-12  # add small buffer to include the k-th element
-
-#     if truncated:
-#         all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact_rdm12(las, epsilon)
-#     else:
-#         all_g, g_sel, a_idxs_selected, i_idxs_selected = grad.get_grad_exact(las, epsilon)
-#     gredients = np.array(g_sel)[:,0]
-#     sorted_indices = np.argsort(-np.abs(gredients))
-#     a_idxs_selected = [a_idxs_selected[i] for i in sorted_indices]
-#     i_idxs_selected = [i_idxs_selected[i] for i in sorted_indices]
-
-#     return a_idxs_selected, i_idxs_selected
-
 def get_sorted_excitations(a_idxs, i_idxs, g, epsilon=0.0, fraction = None, verbose=0):
     # select excitations based on fraction if provided
     # if there are multiple excitations with the same gradient magnitude at the cutoff,
