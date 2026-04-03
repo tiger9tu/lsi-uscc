@@ -18,6 +18,7 @@ Only the expensive outputs are checkpointed:
 
 Delete ckpt/ (or individual files) to force recomputation.
 """
+import gc
 import numpy as np
 from pathlib import Path
 from time import time
@@ -53,17 +54,14 @@ from helper.util import get_sorted_excitations
 # large m can afford more excitations since each step is cheaper relative to gain.
 CHEM_ACC_MH   = 1.594   # ±1.594 mH = chemical accuracy threshold
 
-M_VALUES = [1, 2, 4, 8, 16, 32, 64, 128]
+M_VALUES = [8, 16, 32, 48, 64]
 
 N_VALUES_BY_M = {
-    1:   [5, 10, 25, 50, 100, 200, 500],
-    2:   [5, 10, 25, 50, 100, 200, 500],
-    4:   [5, 10, 25, 50, 100, 200, 500],
-    8:   [5, 10, 25, 50, 100, 200, 500, 1000],
-    16:  [5, 10, 25, 50, 100, 200, 500, 1000],
-    32:  [5, 10, 25, 50, 100, 200, 500, 1000],
-    64:  [5, 10, 25, 50, 100, 200, 500, 1000],
-    128: [5, 10, 25, 50, 100, 200, 500, 1000],
+    8:   [60, 120],
+    16:  [60, 120],
+    32:  [60, 120],
+    48:  [60],
+    64:  [60],
 }
 
 # ── 2. System parameters ────────────────────────────────────────────────────────
@@ -78,24 +76,26 @@ mol = struct(1.0, 1.0, '6-31g')
 mol.output = str(CKPT_DIR / 'chn_bench.log')
 mol.verbose = 3
 mol.spin = 8
-mol.max_memory = 16000
+mol.max_memory = 350000   # 350 GB -- machine has ~365 GB RAM
 mol.build()
 mf = scf.RHF(mol).run()
 
 ncas    = sum(ncas_f)
 nelecas = (5, 5)
 
-# ── 4. CASCI reference ─────────────────────────────────────────────────────────
-mc = mcscf.CASCI(mf, ncas, nelecas).set(fcisolver=csf_solver(mol, smult=1))
-mc.kernel()
-e_casci = mc.e_tot
-print(f"CASCI(10,10) energy = {e_casci:.8f}", flush=True)
-
-# ── 5. LASSCF ──────────────────────────────────────────────────────────────────
+# ── 4. LASSCF ──────────────────────────────────────────────────────────────────
 las = LASSCF(mf, ncas_f, nelecas_f, spin_sub=spin_sub_f)
 mo_coeff = las.localize_init_guess(frag_atom_list)
 las.kernel(mo_coeff)
 print(f"LASSCF energy       = {las.e_tot:.8f}", flush=True)
+
+# ── 5. CASCI reference (using LAS MOs as reference orbitals) ──────────────────
+mc = mcscf.CASCI(mf, ncas, nelecas).set(fcisolver=csf_solver(mol, smult=1))
+mc.kernel(las.mo_coeff)
+e_casci = mc.e_tot
+print(f"CASCI(10,10) energy = {e_casci:.8f}", flush=True)
+del mc
+gc.collect()
 
 # ── 6. Full LASSIS ─────────────────────────────────────────────────────────────
 lsi = lassi.LASSIS(las)
@@ -122,9 +122,10 @@ for m in M_VALUES:
     # ── Step 2: sub-LASSI in top-m subspace -> lsi_prime ──────────────────────
     t0 = time()
     lsi_prime = LSI_LUSCC(lsi, [], [], top_m=m)
-    e_prime, _ = lsi_prime.kernel()
+    e_prime, _si = lsi_prime.kernel()
     t_prime = time() - t0
     e_lsi_prime = float(e_prime[0])
+    del e_prime, _si
     print(f"\n[m={m}] |lsi'> energy = {e_lsi_prime:.8f}  ({t_prime:.1f} s)", flush=True)
 
     # ── Step 3: gradients on |lsi'> (checkpoint this expensive step) ──────────
@@ -145,6 +146,8 @@ for m in M_VALUES:
                  g_all=g_all,
                  n_total=np.array(n_total),
                  t_grad=np.array(t_grad))
+        del g_sel, a_idxs_all, i_idxs_all
+        gc.collect()
         print(f"[m={m}] gradients done in {t_grad:.1f} s, "
               f"excitations available: {n_total}", flush=True)
     else:
@@ -156,11 +159,11 @@ for m in M_VALUES:
         print(f"[m={m}] excitations available: {n_total}  "
               f"(grad took {t_grad:.1f} s) [from ckpt]", flush=True)
 
+    del grad_ckpt
+    gc.collect()
+
     # ── Step 4: LSI-LUSCC for each n ──────────────────────────────────────────
-    reached_chem_acc = False
-    for n in N_VALUES_BY_M.get(m, N_VALUES_BY_M[128]):
-        if reached_chem_acc:
-            break
+    for n in N_VALUES_BY_M.get(m, []):
         res_ckpt = load_npz(f"result_m{m}_n{n}.npz")
         n_use    = min(n, n_total)
 
@@ -170,9 +173,6 @@ for m in M_VALUES:
             delta_mh = (e - e_casci) * 1000
             print(f"{m:>4}  {n_use:>5}  {e:>14.8f}  {delta_mh:>+13.4f}  "
                   f"{t_prime:>14.1f}  {dt:>10.1f}  [from ckpt]", flush=True)
-            if abs(delta_mh) <= CHEM_ACC_MH:
-                print(f"  *** Chemical accuracy reached at m={m}, n={n_use}! ***", flush=True)
-                reached_chem_acc = True
             continue
 
         a_use = a_sorted[:n_use]
@@ -188,13 +188,20 @@ for m in M_VALUES:
             print(f"{m:>4}  {n_use:>5}  {e:>14.8f}  {delta_mh:>+13.4f}  "
                   f"{t_prime:>14.1f}  {dt:>10.1f}", flush=True)
             save_npz(f"result_m{m}_n{n}.npz", e=np.array(e), dt=np.array(dt))
-            if abs(delta_mh) <= CHEM_ACC_MH:
-                print(f"  *** Chemical accuracy reached at m={m}, n={n_use}! ***", flush=True)
-                reached_chem_acc = True
         except Exception as exc:
             dt = time() - t0
             print(f"{m:>4}  {n_use:>5}  {'ERROR':>14}  {str(exc)[:40]}  {dt:.1f}s",
                   flush=True)
+        finally:
+            try:
+                del luscc, e_roots
+            except NameError:
+                pass
+            gc.collect()
+
+    # Free lsi_prime before building the next one
+    del lsi_prime, a_sorted, i_sorted, g_all
+    gc.collect()
 
 print("\n" + "="*80, flush=True)
 print("Reference energies:", flush=True)

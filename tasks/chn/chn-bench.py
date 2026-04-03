@@ -22,8 +22,8 @@ from helper.util import get_sorted_excitations
 from time import time
 
 # ── 1. Hyperparameter sweep grid ───────────────────────────────────────────
-M_VALUES = [1, 2, 4, 8]   # number of dominant LAS components to keep
-N_VALUES = [5, 10, 25, 50]  # number of excitations to include
+M_VALUES = [1, 2, 4, 8, 16, 32]   # number of dominant LAS components to keep
+N_VALUES = [5, 10, 25, 50, 100, 200, 500]  # number of excitations to include
 
 # ── 2. System parameters ───────────────────────────────────────────────────
 ncas_f         = (4, 2, 4)

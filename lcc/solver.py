@@ -48,7 +48,7 @@ class LSI_LUSCC(LASSI):
             las = las_or_lsi._las
             # lsi-luscc generates many near-degenerate states; tighter lindep
             # threshold is needed to avoid a near-singular orthogonal basis.
-            self._lindep_thresh = lindep_thresh if lindep_thresh is not None else 1e-4
+            self._lindep_thresh = lindep_thresh if lindep_thresh is not None else 1e-3
         else:
             # las-luscc: bare LAS object (single-root special case)
             self._ref_lsi = None
