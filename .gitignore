@@ -99,3 +99,8 @@ Desktop.ini
 
 # Other
 *.log
+
+# Regen-able computational artifacts (PySCF checkpoints, grad caches, etc.)
+*.chk
+*.npz
+tasks/**/ckpt/

@@ -183,6 +183,66 @@ def test_trace_relation(h4_lassi):
 # Test 5: Weighted average
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Test 6: _make_rdm3s_frag_pair vs _make_rdm3s_spinless_pair for transitions
+# ---------------------------------------------------------------------------
+
+def test_frag_pair_transition():
+    """_make_rdm3s_frag_pair must match _make_rdm3s_spinless_pair for same-rootspace
+    transition pairs (bra != ket within one rootspace, i.e. lroots > 1).
+    This exercises the case where dm1 is non-symmetric (bra != ket).
+    """
+    from mrh.my_pyscf.lassi.op_o0 import (
+        _make_rdm3s_frag_pair, _make_rdm3s_spinless_pair, addr_outer_product
+    )
+    from pyscf.fci import cistring
+
+    # 2 fragments: f0 (2 orbs, 1a 1b), f1 (2 orbs, 1a 0b)
+    n0, ne0 = 2, (1, 1)
+    n1, ne1 = 2, (1, 0)
+    norb = n0 + n1
+    ne_global = (ne0[0] + ne1[0], ne0[1] + ne1[1])
+
+    rng = np.random.default_rng(17)
+    ci_f0_a = rng.standard_normal((2, 2))
+    ci_f0_a /= np.linalg.norm(ci_f0_a)
+    ci_f0_b = rng.standard_normal((2, 2))
+    ci_f0_b -= np.dot(ci_f0_b.ravel(), ci_f0_a.ravel()) * ci_f0_a
+    ci_f0_b /= np.linalg.norm(ci_f0_b)
+    ci_f1_a = rng.standard_normal((2, 1))
+    ci_f1_a /= np.linalg.norm(ci_f1_a)
+    ci_f1_b = rng.standard_normal((2, 1))
+    ci_f1_b -= np.dot(ci_f1_b.ravel(), ci_f1_a.ravel()) * ci_f1_a
+    ci_f1_b /= np.linalg.norm(ci_f1_b)
+
+    def make_outer(f0, f1):
+        nd_a = cistring.num_strings(norb, ne_global[0])
+        nd_b = cistring.num_strings(norb, ne_global[1])
+        ad_a = addr_outer_product([n0, n1], [ne0[0], ne1[0]])
+        ad_b = addr_outer_product([n0, n1], [ne0[1], ne1[1]])
+        nda0 = cistring.num_strings(n0, ne0[0]); ndb0 = cistring.num_strings(n0, ne0[1])
+        nda1 = cistring.num_strings(n1, ne1[0]); ndb1 = cistring.num_strings(n1, ne1[1])
+        dp = np.multiply.outer(f1.reshape(1, nda1, ndb1), f0.reshape(1, nda0, ndb0))
+        dp = dp.transpose(0, 3, 1, 4, 2, 5).reshape(1, nda1 * nda0, ndb1 * ndb0)[0]
+        ci = np.zeros((nd_a, nd_b))
+        ci[np.ix_(ad_a, ad_b)] = dp
+        return ci
+
+    ci_bra = make_outer(ci_f0_a, ci_f1_a)
+    ci_ket = make_outer(ci_f0_b, ci_f1_b)
+
+    ref = _make_rdm3s_spinless_pair(ci_bra, ci_ket, norb, ne_global, ne_global)
+    result = _make_rdm3s_frag_pair(
+        [ci_f0_a, ci_f1_a], [ci_f0_b, ci_f1_b], [n0, n1], [ne0, ne1]
+    )
+
+    for spin, name in enumerate(['aaa', 'aab', 'abb', 'bbb']):
+        err = np.max(np.abs(result[spin] - ref[spin]))
+        assert err < 1e-12, (
+            f"Transition pair {name}: _make_rdm3s_frag_pair vs spinless max|diff| = {err:.3e}"
+        )
+
+
 def test_weighted_average(h4_lassi):
     """Weighted average of rdm3s == manual sum."""
     _, lsi, si = h4_lassi
