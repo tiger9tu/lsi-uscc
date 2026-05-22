@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from pyscf import gto, scf, lib, mcscf
 from mrh.my_pyscf.mcscf.lasscf_o0 import LASSCF
@@ -30,18 +31,21 @@ mf = scf.RHF(mol).run()
 
 # Reference CASCI
 cas = mcscf.CASCI(mf, sum(ncas_f), sum(nelecas_f)).run()
-print("CASCI energy =", cas.e_tot)
+print("CASCI energy =", cas.e_tot); sys.stdout.flush()
 
 # ── 3. LASSCF ──────────────────────────────────────────────────────────────
 las = LASSCF(mf, ncas_f, nelecas_f, spin_sub=spin_sub_f, verbose=verbose)
 mo_loc = las.localize_init_guess(frag_atom_list, mf.mo_coeff)
 las.kernel(mo_loc)
-print("LASSCF energy =", las.e_tot)
+print("LASSCF energy =", las.e_tot); sys.stdout.flush()
 
 # ── 4. LASSIS (reference) ──────────────────────────────────────────────────
 lsi = lassi.LASSIS(las)
+t0 = time()
 e_lsi, _ = lsi.kernel()
+print("LASSIS time: {:.2f} s".format(time() - t0))
 print("LASSIS energy =", e_lsi[0])
+print("LASSIS number of states:", len(e_lsi)); sys.stdout.flush()
 
 # ── 5. Excitation selection ────────────────────────────────────────────────
 _, g_sel, a_idxs_all, i_idxs_all = grad.get_grad_exact(las, epsilon=0.0)
@@ -51,9 +55,10 @@ g_all = np.array(g_sel)[:, 0]
 for frac in FRACS:
     a_idxs, i_idxs, _ = get_sorted_excitations(
         a_idxs_all, i_idxs_all, g_all, fraction=frac)
-    print(f"\nFraction: {frac} | Number of excitations: {len(a_idxs)}")
+    print(f"\nFraction: {frac} | Number of excitations: {len(a_idxs)}"); sys.stdout.flush()
     t0 = time()
     lsi_luscc = LSI_LUSCC(las, a_idxs, i_idxs)
     e_roots, si = lsi_luscc.kernel()
     print("LSI-LUSCC ground state energy =", e_roots[0])
-    print("Time: {:.2f} s".format(time() - t0))
+    print("LSI-LUSCC number of states:", len(e_roots))
+    print("Time: {:.2f} s".format(time() - t0)); sys.stdout.flush()

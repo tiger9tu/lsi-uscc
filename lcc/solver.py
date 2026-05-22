@@ -1,14 +1,75 @@
 from mrh.my_pyscf.lassi import LASSI
 from mrh.my_pyscf.mcscf.addons import state_average_n_mix, get_h1e_zipped_fcisolver
 from mrh.my_pyscf.mcscf.productstate import ImpureProductStateFCISolver
+from mrh.my_pyscf.lassi.op_o1.frag import FragTDMInt
 import numpy as np
 from pyscf import lib
 from pyscf.fci import addons
+from pyscf.fci.direct_spin1 import trans_rdm12s as _fci_tdm12s
+from pyscf.fci import cistring as _fci_cistring
 from pyscf.csf_fci import csf_solver
 from helper.op_ci import apply_operator_string_fci
 from helper import util
 from copy import deepcopy
 
+
+# ── Optimized FragTDMInt subclass ──────────────────────────────────────────────
+
+class LSIFragTDMInt(FragTDMInt):
+    """FragTDMInt subclass that reuses precomputed spectator TDMs for within-group pairs.
+
+    For two excited states A|LAS_{r,j1}> and A|LAS_{r,j2}> from the same (A, r)
+    group and a spectator fragment fi, the transition density matrix between them
+    equals the reference intra-rootspace TDM dm1[r][r][k1, k2].  Instead of
+    recomputing these with trans_rdm12s, we look them up from a precomputed block
+    built once per (fi, r_pool) pair.
+
+    The cache is stored on the LAS object as ``las._lsi_tdm_cache`` and has the
+    structure::
+
+        {
+          'spectator_skip': {fi: [(rs_a, rs_b), ...]},
+          'pair_tdms': {(rs_a, rs_b): {fi: (dm1_1x1, dm2_1x1, ovlp_1x1)}},
+        }
+    """
+
+    def __init__(self, las, ci, hopping_index, zerop_index, onep_index, norb, nroots, nelec_rs,
+                 rootaddr, fragaddr, idx_frag, mask_ints, **kwargs):
+        cache = getattr(las, '_lsi_tdm_cache', None)
+        if cache is not None:
+            skip = cache.get('spectator_skip', {}).get(idx_frag, [])
+            if skip:
+                mask_ints = mask_ints.copy()
+                for rs_a, rs_b in skip:
+                    mask_ints[rs_a, rs_b] = False
+                    mask_ints[rs_b, rs_a] = False
+        super().__init__(las, ci, hopping_index, zerop_index, onep_index, norb, nroots, nelec_rs,
+                         rootaddr, fragaddr, idx_frag, mask_ints, **kwargs)
+        if cache is not None:
+            self._fill_from_cache(cache)
+
+    def _fill_from_cache(self, cache):
+        fi = self.idx_frag
+        for (rs_a, rs_b), frag_data in cache.get('pair_tdms', {}).items():
+            if fi not in frag_data:
+                continue
+            dm1_val, dm2_val, ovlp_val = frag_data[fi]
+            ir = self.unique_root[rs_a]
+            jr = self.unique_root[rs_b]
+            if ir < jr:
+                ir, jr = jr, ir
+            if ir == jr:
+                continue  # degenerate unique roots; skip to avoid corruption
+            if self.dm1[ir][jr] is None:
+                self.dm1[ir][jr] = np.ascontiguousarray(dm1_val)
+            if dm2_val is not None and self.dm2[ir][jr] is None:
+                self.dm2[ir][jr] = np.ascontiguousarray(dm2_val)
+            if self.ovlp[ir][jr] is None:
+                self.ovlp[ir][jr] = np.ascontiguousarray(ovlp_val)
+                self.ovlp[jr][ir] = np.ascontiguousarray(ovlp_val.conj().T)
+
+
+# ── Main solver class ─────────────────────────────────────────────────────────
 
 class LSI_LUSCC(LASSI):
     """Perform LUSCC using the LASSI framework.
@@ -38,6 +99,10 @@ class LSI_LUSCC(LASSI):
                  state=0, threshold=0.01, top_m=None, lindep_thresh=None, opt=1, **kwargs):
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
+        self._n_ref_rs = None
+        self._exc_rs_meta = []
+        self._lsi_tdm_cache = None
+        self._fragint_class = None
 
         if isinstance(las_or_lsi, LASSI):
             # lsi-luscc: LASSI object provided
@@ -134,6 +199,18 @@ class LSI_LUSCC(LASSI):
 
         return Aci, nelecas_sub
 
+    def _get_active_frags(self, a_idx, i_idx):
+        """Return frozenset of fragment indices touched by operator (a_idx, i_idx)."""
+        frag_orbs_start = [0]
+        for norb_f in self.ncas_sub[:-1]:
+            frag_orbs_start.append(frag_orbs_start[-1] + norb_f)
+        active = set()
+        for idx in list(a_idx) + list(i_idx):
+            spatial = idx % self.ncas
+            fi = int(np.searchsorted(frag_orbs_start, spatial, side='right') - 1)
+            active.add(fi)
+        return frozenset(active)
+
     # ------------------------------------------------------------------
     # State preparation
     # ------------------------------------------------------------------
@@ -175,34 +252,74 @@ class LSI_LUSCC(LASSI):
             _charges, _spins, _smults, _wfnsyms = get_space_info(self._las)
             nelec_frs = self.get_nelec_frs(self._las)
             original_ci = self.ci
+            fragaddr = None  # not used for las-luscc (no within-group pairs)
 
             def _ref_ci_and_nelec(j):
                 ref_ci = [original_ci[fi][j] for fi in range(self.nfrags)]
                 ref_nelec = [tuple(nelec_frs[fi, j]) for fi in range(self.nfrags)]
                 return ref_ci, ref_nelec, j
 
-        # Pool starts with the significant reference states
+        # ── Group reference states by rootspace r ─────────────────────────
+        # Multiple sig_indices j can map to the same rootspace r when the
+        # source LASSI object has lroots > 1 for that rootspace.  Using the
+        # full ref.ci[fi][r] array (already LASCI-orthogonalised per frag)
+        # as a single multi-root entry lets op_o1 vectorise over lroots pairs
+        # without creating spurious Cartesian-product states, because LASCI
+        # guarantees that per-fragment CI vectors within a rootspace are
+        # independent bases — the Cartesian product IS the correct product
+        # state expansion for that rootspace.
+        ref_rs_seen = {}   # r -> pool_idx of first occurrence
         new_ci = [[] for _ in range(self.nfrags)]
-        for pool_idx, j in enumerate(sig_indices):
-            ref_ci_j, _, r = _ref_ci_and_nelec(j)
+        self.nroots = 0
+
+        for j in sig_indices:
+            _, _, r = _ref_ci_and_nelec(j)
+            if r in ref_rs_seen:
+                continue  # already added this rootspace's full CI
+            ref_rs_seen[r] = self.nroots
             for fi in range(self.nfrags):
-                new_ci[fi].append(ref_ci_j[fi])
-            charges[pool_idx] = _charges[r]
-            spins  [pool_idx] = _spins  [r]
-            smults [pool_idx] = _smults [r]
-            wfnsyms[pool_idx] = _wfnsyms[r]
+                new_ci[fi].append(ref.ci[fi][r] if self._ref_lsi is not None
+                                  else original_ci[fi][r])
+            charges[self.nroots] = _charges[r]
+            spins  [self.nroots] = _spins  [r]
+            smults [self.nroots] = _smults [r]
+            wfnsyms[self.nroots] = _wfnsyms[r]
+            self.nroots += 1
 
-        self.nroots = n_sig
+        n_ref_rs = self.nroots
+        self._n_ref_rs = n_ref_rs
+        self._exc_rs_meta = []
 
-        # Apply each selected excitation to every significant reference state
+        # ── Excited states: one rootspace per valid (A, j) combination ────
+        # A|LAS_j⟩ states from different reference product states are
+        # *correlated*: the per-fragment CI vectors from different j's cannot
+        # be stacked into a multi-root array without creating spurious
+        # Cartesian-product states (because the fragment CIs come from
+        # different j's and are not jointly LASCI-orthogonalised).
+        # We therefore keep one rootspace per excited state, same as before.
         for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
+            active_frags = self._get_active_frags(a_idx, i_idx)
             for j in sig_indices:
-                ref_ci_j, ref_nelecas_sub_j, _ = _ref_ci_and_nelec(j)
+                ref_ci_j, ref_nelecas_sub_j, r_source = _ref_ci_and_nelec(j)
+                r_pool = ref_rs_seen.get(r_source)
 
-                for a, i in [(a_idx, i_idx), (i_idx, a_idx)]:
+                for dir_idx, (a, i) in enumerate([(a_idx, i_idx), (i_idx, a_idx)]):
                     Aci, nelecas_sub_new = self.getAci(
                         a, i, ref_ci=ref_ci_j, ref_nelecas_sub=ref_nelecas_sub_j)
                     if Aci is not None:
+                        # Track metadata for the within-group TDM optimization
+                        if fragaddr is not None and r_pool is not None:
+                            ki_per_frag = [int(fragaddr[fi, j]) for fi in range(self.nfrags)]
+                        else:
+                            ki_per_frag = [0] * self.nfrags
+                        self._exc_rs_meta.append({
+                            'group_key': (tuple(a_idx), tuple(i_idx), r_pool, dir_idx),
+                            'active_frags': active_frags,
+                            'ref_rs_pool': r_pool,
+                            'ki_per_frag': ki_per_frag,
+                            'nelecas': [tuple(nelecas_sub_new[fi]) for fi in range(self.nfrags)],
+                        })
+
                         for fi, ci_f in enumerate(Aci):
                             new_ci[fi].append(ci_f)
                             charges[self.nroots, fi] = (
@@ -213,8 +330,18 @@ class LSI_LUSCC(LASSI):
                                 abs(spins[self.nroots, fi]) + 1)
                         self.nroots += 1
 
-        lib.logger.info(self, 'nroots prepared: %d (%d reference + %d excited)',
-                        self.nroots, n_sig, self.nroots - n_sig)
+        self.e_states_meaningless = True
+
+        from mrh.my_pyscf.lassi.citools import get_lroots as _get_lroots
+        lroots_new = _get_lroots(new_ci)
+        n_total = int(np.sum(np.prod(lroots_new, axis=0)))
+        n_exc_states = n_total - int(np.sum(np.prod(lroots_new[:, :n_ref_rs], axis=0)))
+        lib.logger.info(self,
+            'nroots prepared: %d states (%d reference + %d excited) '
+            'in %d rootspaces (%d ref + %d exc; avg %.1f states/rootspace)',
+            n_total, n_total - n_exc_states, n_exc_states,
+            self.nroots, n_ref_rs, self.nroots - n_ref_rs,
+            n_total / max(self.nroots, 1))
 
         charges = charges[:self.nroots]
         spins   = spins  [:self.nroots]
@@ -223,7 +350,7 @@ class LSI_LUSCC(LASSI):
 
         self.ci = new_ci
         self.weights = np.zeros(self.nroots)
-        self.weights[:n_sig] = 1.0  # equal weight to all reference states
+        self.weights[:n_ref_rs] = 1.0
 
         self.fciboxes = [get_h1e_zipped_fcisolver(state_average_n_mix(
             self._las, [csf_solver(self._las.mol, smult=s2p1).set(
@@ -233,8 +360,155 @@ class LSI_LUSCC(LASSI):
             for c_r, m2_r, s2p1_r, ir_r in zip(
                 charges.T, spins.T, smults.T, wfnsyms.T)]
 
+    # ------------------------------------------------------------------
+    # Within-group spectator TDM precomputation (Optimization 2)
+    # ------------------------------------------------------------------
+
+    def _compute_spectator_block(self, fi, ref_rs_pool, nelec_fi):
+        """Compute the full M_r × M_r TDM block for spectator fragment fi.
+
+        Args:
+            fi          : fragment index
+            ref_rs_pool : LSI-LUSCC rootspace index for the source reference rootspace
+            nelec_fi    : (neleca, nelecb) electron count for fragment fi
+
+        Returns:
+            (dm1_block, dm2_block, ovlp_block) with shapes
+            (M_r, M_r, 2, norb, norb), (M_r, M_r, 4, norb, norb, norb, norb), (M_r, M_r)
+        """
+        ci_block = self.ci[fi][ref_rs_pool]          # 3D (M_r, na, nb) or 2D (na, nb)
+        if ci_block.ndim == 2:
+            ci_block = ci_block[None, :]             # → (1, na, nb)
+        M_r = ci_block.shape[0]
+        norb_fi = self.ncas_sub[fi]
+        na, nb = ci_block.shape[1], ci_block.shape[2]
+
+        dm1_block  = np.zeros((M_r, M_r, 2, norb_fi, norb_fi))
+        dm2_block  = np.zeros((M_r, M_r, 4, norb_fi, norb_fi, norb_fi, norb_fi))
+        ovlp_block = np.zeros((M_r, M_r))
+
+        for k_a in range(M_r):
+            bra = ci_block[k_a].reshape(na, nb)
+            for k_b in range(M_r):
+                ket = ci_block[k_b].reshape(na, nb)
+                ovlp_block[k_a, k_b] = np.dot(bra.ravel().conj(), ket.ravel())
+                d1s, d2s = _fci_tdm12s(bra, ket, norb_fi, nelec_fi)
+                dm1_block[k_a, k_b] = np.stack(d1s, axis=0).transpose(0, 2, 1)
+                dm2_block[k_a, k_b] = np.stack(d2s, axis=0)
+
+        return dm1_block, dm2_block, ovlp_block
+
+    def _build_lsi_tdm_cache(self):
+        """Precompute spectator TDMs for within-group pairs (Optimization 2).
+
+        Within each (operator, reference-rootspace, direction) group of excited
+        states, spectator-fragment TDMs are identical to reference intra-rootspace
+        TDMs already available from the reference CI arrays.  This method computes
+        those blocks once per (fragment, reference-rootspace) pair and caches the
+        per-pair slices so LSIFragTDMInt can skip the corresponding trans_rdm12s
+        calls during _init_crunch_.
+
+        Returns None if there are no within-group pairs to optimise (e.g. all
+        groups have only one member).
+        """
+        if not self._exc_rs_meta:
+            return None
+
+        n_ref_rs = self._n_ref_rs
+
+        # Group excited rootspaces by group_key
+        groups = {}
+        for exc_idx, meta in enumerate(self._exc_rs_meta):
+            gk = meta['group_key']
+            rs_exc = n_ref_rs + exc_idx
+            if gk not in groups:
+                groups[gk] = {
+                    'rs_list': [],
+                    'ki_per_frag_list': [],
+                    'nelecas_list': [],
+                    'active_frags': meta['active_frags'],
+                    'ref_rs_pool': meta['ref_rs_pool'],
+                }
+            groups[gk]['rs_list'].append(rs_exc)
+            groups[gk]['ki_per_frag_list'].append(meta['ki_per_frag'])
+            groups[gk]['nelecas_list'].append(meta['nelecas'])
+
+        spectator_skip = {}   # fi → [(rs_a, rs_b), ...]
+        pair_tdms = {}        # (rs_a, rs_b) → {fi: (dm1_1x1, dm2_1x1, ovlp_1x1)}
+        spec_block_cache = {} # (fi, r_pool) → (dm1_block, dm2_block, ovlp_block)
+        n_pairs_saved = 0
+
+        for g in groups.values():
+            rs_list = g['rs_list']
+            if len(rs_list) < 2:
+                continue
+
+            active_frags   = g['active_frags']
+            ref_rs_pool    = g['ref_rs_pool']
+            ki_list        = g['ki_per_frag_list']   # ki_list[state_idx][fi]
+            nelecas_list   = g['nelecas_list']        # nelecas_list[state_idx][fi]
+
+            if ref_rs_pool is None:
+                continue  # safety: no source rootspace recorded
+
+            for idx_a in range(len(rs_list)):
+                for idx_b in range(idx_a):
+                    rs_a = rs_list[idx_a]   # rs_a > rs_b (added in order)
+                    rs_b = rs_list[idx_b]
+
+                    frag_data = {}
+                    for fi in range(self.nfrags):
+                        if fi in active_frags:
+                            continue  # let parent compute active-fragment TDMs
+
+                        # Ensure the spectator block for (fi, ref_rs_pool) is built
+                        cache_key = (fi, ref_rs_pool)
+                        if cache_key not in spec_block_cache:
+                            nelec_fi = nelecas_list[idx_a][fi]  # same for all states (spectator)
+                            spec_block_cache[cache_key] = self._compute_spectator_block(
+                                fi, ref_rs_pool, nelec_fi)
+
+                        dm1_blk, dm2_blk, ovlp_blk = spec_block_cache[cache_key]
+                        k_a = ki_list[idx_a][fi]
+                        k_b = ki_list[idx_b][fi]
+
+                        # Slice out the (1,1,...) sub-block for this specific pair
+                        dm1_val  = dm1_blk [k_a:k_a+1, k_b:k_b+1]
+                        dm2_val  = dm2_blk [k_a:k_a+1, k_b:k_b+1]
+                        ovlp_val = ovlp_blk[k_a:k_a+1, k_b:k_b+1]
+
+                        frag_data[fi] = (dm1_val, dm2_val, ovlp_val)
+                        spectator_skip.setdefault(fi, []).append((rs_a, rs_b))
+
+                    if frag_data:
+                        pair_tdms[(rs_a, rs_b)] = frag_data
+                        n_pairs_saved += len(frag_data)
+
+        if not pair_tdms:
+            return None
+
+        n_spec_blocks = len(spec_block_cache)
+        lib.logger.info(self,
+            'LSI-LUSCC TDM cache: %d within-group pairs optimised across %d spectator '
+            'fragment-rootspace blocks (%.0f trans_rdm12s calls avoided, '
+            '%d blocks computed once)',
+            len(pair_tdms), n_spec_blocks, n_pairs_saved, n_spec_blocks)
+
+        return {'spectator_skip': spectator_skip, 'pair_tdms': pair_tdms}
+
+    # ------------------------------------------------------------------
+    # Kernel
+    # ------------------------------------------------------------------
+
     def kernel(self, **kwargs):
         self.prepare_states_()
+
+        # Build spectator TDM cache and activate the optimised FragTDMInt subclass
+        cache = self._build_lsi_tdm_cache()
+        if cache is not None:
+            self._lsi_tdm_cache = cache
+            self._fragint_class = LSIFragTDMInt
+
         import mrh.my_pyscf.lassi.citools as _citools
         _old_thresh = _citools.LINDEP_THRESH
         _citools.LINDEP_THRESH = self._lindep_thresh
@@ -242,6 +516,8 @@ class LSI_LUSCC(LASSI):
             result = LASSI.kernel(self, **kwargs)
         finally:
             _citools.LINDEP_THRESH = _old_thresh
+            self._lsi_tdm_cache = None
+            self._fragint_class = None
         return result
 
     def filter_spaces(self, las):

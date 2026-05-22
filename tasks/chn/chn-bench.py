@@ -84,7 +84,7 @@ for m in M_VALUES:
     # ── Step 2: sub-LASSI in top-m subspace -> lsi_prime ──────────────────
     t0 = time()
     lsi_prime = LSI_LUSCC(lsi, [], [], top_m=m)
-    e_prime, _ = lsi_prime.kernel()
+    e_prime, _ = lsi_prime.kernel() # rediagonalze in this subspace to get |lsi'> and its energy
     t_prime = time() - t0
     e_lsi_prime = e_prime[0]
     print(f"\n[m={m}] |lsi'> energy = {e_lsi_prime:.8f}  ({t_prime:.1f} s)", flush=True)
