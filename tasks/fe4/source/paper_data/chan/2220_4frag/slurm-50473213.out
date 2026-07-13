@@ -1,0 +1,13 @@
+<module 'pyscf.df.df_jk' from '/project/lgagliardi/valayagarawal/Apps/pyscf/pyscf/df/df_jk.py'> monkey-patched to GPU accelerated version
+<function M at 0x1503b39705e0> monkey-patched to include use_gpu flag
+<function _ERIS.__init__ at 0x1503b01ba5e0> inside CASSCF DF ERIS monkey-patched to GPU accelerated version
+<function make_rdm1_spin1 at 0x15038f0a9550> inside FCI rdm monkey-patched to GPU accelerated version
+<function make_rdm12_spin1 at 0x15038f0a9790> inside FCI rdm monkey-patched to GPU accelerated version
+<function reorder_rdm at 0x15038f0a9820> inside FCI rdm monkey-patched to GPU accelerated version
+<function trans_rdm12s at 0x15038f0a9ee0> inside FCI direct_spin1 monkey-patched to GPU accelerated version
+<function trans_rdm1s at 0x15038f0a9f70> inside FCI direct_spin1 monkey-patched to GPU accelerated version
+Inside mrh::mole.py adding use_gpu flag
+output file: gpu_lassis_test.log
+tot grids = 408824
+tot grids = 408824
+tot grids = 408824

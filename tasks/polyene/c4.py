@@ -59,6 +59,14 @@ for frac in FRACS:
     t0 = time()
     lsi_luscc = LSI_LUSCC(las, a_idxs, i_idxs)
     e_roots, si = lsi_luscc.kernel()
+    si_arr = np.asarray(si)
+    si0 = si_arr[:, 0]
+    stem = Path(__file__).stem
+    np.save(pwd / 'data' / f"{stem}_frac{frac:.2f}_si0.npy", si0)
+    np.save(pwd / 'data' / f"{stem}_frac{frac:.2f}_e.npy", np.asarray(e_roots))
+    top = np.argsort(-np.abs(si0))[:10]
     print("LSI-LUSCC ground state energy =", e_roots[0])
     print("LSI-LUSCC number of states:", len(e_roots))
+    print("Top-10 |coeff| basis indices:", top.tolist())
+    print("Top-10 coefficients:", si0[top].tolist())
     print("Time: {:.2f} s".format(time() - t0)); sys.stdout.flush()
