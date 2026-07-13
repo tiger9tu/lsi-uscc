@@ -4,7 +4,7 @@ from mrh.my_pyscf.mcscf.productstate import ImpureProductStateFCISolver
 from mrh.my_pyscf.lassi.op_o1.frag import FragTDMInt
 import numpy as np
 from pyscf import lib
-from pyscf.lib.numpy_helper import tag_array
+from pyscf.scf.addons import canonical_orth_ as _pyscf_canonical_orth
 from pyscf.fci import addons
 from pyscf.fci.direct_spin1 import trans_rdm12s as _fci_tdm12s
 from pyscf.fci import cistring as _fci_cistring
@@ -100,8 +100,8 @@ class LSI_LUSCC(LASSI):
     """
 
     def __init__(self, las_or_lsi, a_idxs, i_idxs,
-                 state=0, threshold=0.01, top_m=None, lindep_thresh=None,
-                 smult_si=None, opt=1, **kwargs):
+                 state=0, threshold=0.01, top_m=None, lindep_thresh=None, norm_thresh=None,
+                 opt=1, **kwargs):
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
         self._smult_si = smult_si
@@ -109,6 +109,7 @@ class LSI_LUSCC(LASSI):
         self._exc_rs_meta = []
         self._lsi_tdm_cache = None
         self._fragint_class = None
+        self._norm_thresh = norm_thresh if norm_thresh is not None else 1e-12
 
         if isinstance(las_or_lsi, LASSI):
             # lsi-luscc: LASSI object provided
@@ -547,19 +548,40 @@ class LSI_LUSCC(LASSI):
             self._fragint_class = LSIFragTDMInt
 
         import mrh.my_pyscf.lassi.citools as _citools
-        _threshold_modules = []
-        for _modname in ('basis', 'sisolver', 'spaces'):
-            try:
-                _mod = __import__(f'mrh.my_pyscf.lassi.{_modname}', fromlist=['LINDEP_THRESH'])
-            except ImportError:
-                continue
-            if hasattr(_mod, 'LINDEP_THRESH'):
-                _threshold_modules.append(_mod)
-        if not _threshold_modules and hasattr(_citools, 'LINDEP_THRESH'):
-            _threshold_modules.append(_citools)
-        _old_thresh = [(_mod, _mod.LINDEP_THRESH) for _mod in _threshold_modules]
-        for _mod, _ in _old_thresh:
-            _mod.LINDEP_THRESH = self._lindep_thresh
+        import mrh.my_pyscf.lassi.basis as _basis
+        import mrh.my_pyscf.lassi.sisolver as _sisolver
+        import mrh.my_pyscf.lassi.spaces as _spaces
+
+        def _safe_canonical_orth(ovlp, thr=1e-7):
+            ovlp = np.asarray(ovlp)
+            diag = np.real(np.diag(ovlp))
+            keep = np.isfinite(diag) & (diag > self._norm_thresh)
+            if np.all(keep):
+                return _pyscf_canonical_orth(ovlp, thr=thr)
+
+            if np.count_nonzero(keep):
+                x_keep = _pyscf_canonical_orth(ovlp[np.ix_(keep, keep)], thr=thr)
+                xmat = np.zeros((ovlp.shape[0], x_keep.shape[1]), dtype=x_keep.dtype)
+                xmat[keep] = x_keep
+            else:
+                xmat = np.zeros((ovlp.shape[0], 0), dtype=ovlp.dtype)
+            lib.logger.warn(
+                self,
+                'Dropped %d low-norm LASSI model states before canonical orthogonalization '
+                '(norm_thresh=%g)',
+                ovlp.shape[0] - np.count_nonzero(keep), self._norm_thresh)
+            return xmat
+
+        _thresh_modules = [_citools, _basis, _sisolver, _spaces]
+        _old_thresh = {}
+        for _mod in _thresh_modules:
+            if hasattr(_mod, "LINDEP_THRESH"):
+                _old_thresh[_mod] = _mod.LINDEP_THRESH
+                _mod.LINDEP_THRESH = self._lindep_thresh
+        _old_basis_canonical_orth = _basis.canonical_orth_
+        _old_sisolver_canonical_orth = _sisolver.canonical_orth_
+        _basis.canonical_orth_ = _safe_canonical_orth
+        _sisolver.canonical_orth_ = _safe_canonical_orth
         try:
             try:
                 result = LASSI.kernel(self, **kwargs)
@@ -577,8 +599,10 @@ class LSI_LUSCC(LASSI):
                 result = LASSI.kernel(self, **fallback_kwargs)
                 result = self._filter_smult_roots_(requested_smult)
         finally:
-            for _mod, _thresh in _old_thresh:
-                _mod.LINDEP_THRESH = _thresh
+            for _mod, _thr in _old_thresh.items():
+                _mod.LINDEP_THRESH = _thr
+            _basis.canonical_orth_ = _old_basis_canonical_orth
+            _sisolver.canonical_orth_ = _old_sisolver_canonical_orth
             self._lsi_tdm_cache = None
             self._fragint_class = None
         return result

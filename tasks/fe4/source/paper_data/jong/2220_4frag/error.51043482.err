@@ -1,0 +1,34 @@
+ERROR: Unable to locate a modulefile for 'cmake/4.3'
+Loading gcc/10.2.0
+  ERROR: gcc/10.2.0 cannot be loaded due to a conflict.
+    HINT: Might try "module unload gcc" first.
+
+Loading mpich/3.4.3+gcc-10.2.0
+  ERROR: Load of requirement 'gcc/10.2.0' failed
+WARN: Even tempered Gaussians are generated as DF auxbasis for  Fe
+WARN: LASSIS max_cycle_macro is deprecated. Set cisolver_attr_charge_hops['max_cycle'] in the future
+lassis_4frag_s5.py:59: FutureWarning: Most MC-PDFT and MC-DCFT modules have been moved to pyscf-forge (github.com/pyscf/pyscf-forge) and will be removed from mrh soon.
+  from mrh.my_pyscf import mcpdft
+	Command being timed: "python lassis_4frag_s5.py"
+	User time (seconds): 1637908.93
+	System time (seconds): 3578.73
+	Percent of CPU this job got: 3571%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:45:59
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 10647268
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 135193636
+	Voluntary context switches: 28058886
+	Involuntary context switches: 9188998
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 947600
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
