@@ -94,6 +94,9 @@ class LSI_LUSCC(LASSI):
         state      : which LASSI eigenstate to read SI coefficients from (default 0)
         threshold  : |SI coefficient| cutoff for selecting significant LAS
                      components (default 0.01)
+        smult_si   : target total spin multiplicity for the SI diagonalization.
+                     If set, Davidson diagonalization is used by default because
+                     the in-core path does not enforce the target spin sector.
     """
 
     def __init__(self, las_or_lsi, a_idxs, i_idxs,
@@ -101,6 +104,7 @@ class LSI_LUSCC(LASSI):
                  opt=1, **kwargs):
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
+        self._smult_si = smult_si
         self._n_ref_rs = None
         self._exc_rs_meta = []
         self._lsi_tdm_cache = None
@@ -197,6 +201,7 @@ class LSI_LUSCC(LASSI):
                 ci_f, self.ncas_sub[fi], ref_nelecas_sub[fi], frag_ops[fi])
             if ci_f_new is None or np.all(ci_f_new == 0):
                 return None, None
+            ci_f_new = ci_f_new / np.linalg.norm(ci_f_new.ravel())
             Aci[fi] = ci_f_new
             nelecas_sub[fi] = (neleca, nelecb)
 
@@ -503,7 +508,37 @@ class LSI_LUSCC(LASSI):
     # Kernel
     # ------------------------------------------------------------------
 
+    def _filter_smult_roots_(self, smult_si, tol=1e-4):
+        target_s = (smult_si - 1) / 2
+        target_s2 = target_s * (target_s + 1)
+        s2 = np.asarray(self.si.s2)
+        idx = np.where(np.abs(s2 - target_s2) <= tol)[0]
+        if len(idx) == 0:
+            raise RuntimeError(
+                f"LSI_LUSCC found no roots with spin multiplicity {smult_si} "
+                f"(target <S^2>={target_s2})")
+
+        self.e_roots = self.e_roots[idx]
+        si = self.si[:, idx]
+        self.s2 = np.asarray(self.si.s2)[idx]
+        self.nelec = [self.si.nelec[i] for i in idx]
+        self.wfnsym = [self.si.wfnsym[i] for i in idx]
+        self.rootsym = np.asarray(self.si.rootsym)[idx]
+        self.si = tag_array(
+            si, s2=self.s2, nelec=self.nelec, wfnsym=self.wfnsym,
+            rootsym=self.rootsym, break_symmetry=self.si.break_symmetry,
+            soc=self.si.soc)
+        return self.e_roots, self.si
+
     def kernel(self, **kwargs):
+        requested_smult = self._smult_si if self._smult_si is not None else kwargs.get('smult_si')
+        injected_davidson = False
+        if self._smult_si is not None:
+            kwargs.setdefault('smult_si', self._smult_si)
+        if requested_smult is not None and 'davidson_only' not in kwargs:
+            kwargs['davidson_only'] = True
+            injected_davidson = True
+
         self.prepare_states_()
 
         # Build spectator TDM cache and activate the optimised FragTDMInt subclass
@@ -548,7 +583,21 @@ class LSI_LUSCC(LASSI):
         _basis.canonical_orth_ = _safe_canonical_orth
         _sisolver.canonical_orth_ = _safe_canonical_orth
         try:
-            result = LASSI.kernel(self, **kwargs)
+            try:
+                result = LASSI.kernel(self, **kwargs)
+            except AssertionError:
+                if requested_smult is None or not injected_davidson:
+                    raise
+                lib.logger.warn(
+                    self,
+                    "Spin-coupled Davidson diagonalization is not available for "
+                    "this LAS-LUSCC state space; falling back to direct "
+                    "diagonalization followed by <S^2> root filtering.")
+                fallback_kwargs = dict(kwargs)
+                fallback_kwargs.pop('smult_si', None)
+                fallback_kwargs['davidson_only'] = False
+                result = LASSI.kernel(self, **fallback_kwargs)
+                result = self._filter_smult_roots_(requested_smult)
         finally:
             for _mod, _thr in _old_thresh.items():
                 _mod.LINDEP_THRESH = _thr
