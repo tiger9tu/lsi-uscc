@@ -115,6 +115,10 @@ def main():
             "available_excitations": len(a_all),
             "selected_excitations": len(a_sel),
             "spin_adapted": True, "internally_contracted": False,
+            "mlas_spin_completion":
+                getattr(mlas, "spin_completion_counts", None),
+            "luscc_spin_completion":
+                getattr(solver, "spin_completion_counts", None),
         },
         "las": {"energy_eh": float(las.e_tot)},
         "lassis": {"energy_eh": float(e_full[0]), "s2": full_s2,

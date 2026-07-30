@@ -839,10 +839,12 @@ class LSI_LUSCC(LASSI):
         duplicate labels remain distinct basis vectors, as required.
         """
         from mrh.my_pyscf.lassi.spaces import SingleLASRootspace
+        from mrh.my_pyscf.lassi.citools import get_lroots
         from mrh.my_pyscf.mcscf.lasci import get_space_info
 
         charges, spins, smults, wfnsyms = get_space_info(self)
         nroots_before = int(self.nroots)
+        nstates_before = int(np.sum(np.prod(get_lroots(self.ci), axis=0)))
         out_charges, out_spins, out_smults, out_wfnsyms = [], [], [], []
         out_weights = []
         out_ci = [[] for _ in range(self.nfrags)]
@@ -888,12 +890,21 @@ class LSI_LUSCC(LASSI):
         self.fciboxes = las_complete.fciboxes
         self.weights = np.asarray(las_complete.weights)
         self.nroots = int(las_complete.nroots)
+        nstates_after = int(np.sum(np.prod(get_lroots(self.ci), axis=0)))
+        self.spin_completion_counts = {
+            "rootspaces_before": nroots_before,
+            "rootspaces_after": self.nroots,
+            "model_states_before": nstates_before,
+            "model_states_after": nstates_after,
+        }
         # Spin shuffling changes rootspace addresses, invalidating the optional
         # spectator-cache metadata.  The unoptimised path remains exact.
         self._exc_rs_meta = []
         lib.logger.info(
-            self, "Spin-completed LAS-LUSCC model: %d -> %d rootspaces",
-            nroots_before, self.nroots)
+            self,
+            "Spin-completed LAS-LUSCC model: %d -> %d rootspaces; "
+            "%d -> %d model states",
+            nroots_before, self.nroots, nstates_before, nstates_after)
 
     def _filter_smult_roots_(self, smult_si, tol=1e-4):
         target_s = (smult_si - 1) / 2

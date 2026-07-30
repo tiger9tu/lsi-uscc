@@ -25,3 +25,7 @@ Scientific observation
   is spin contaminated. Spin completion in the final LUSCC space restores a
   pure S=3 state and reproduces the full target-spin LASSIS energy within
   1.2e-14 Eh.
+
+Spin-completion dimensions for the septet
+  mLAS reference: 2 -> 14 model states (+12; 7x)
+  final LUSCC:   42 -> 126 model states (+84; 3x)
