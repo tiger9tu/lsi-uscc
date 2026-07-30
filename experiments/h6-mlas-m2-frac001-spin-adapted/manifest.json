@@ -1,0 +1,22 @@
+{
+  "study": "h6-mLAS-m2-frac0.01-spin-adapted",
+  "system": {
+    "geometry": "tasks/geom/h6.xyz",
+    "basis": "sto-3g",
+    "fragments": [[0, 1], [2, 3], [4, 5]],
+    "active_orbitals": [2, 2, 2],
+    "active_electrons": [2, 2, 2]
+  },
+  "parameters": {
+    "multiplicities": [1, 3, 5, 7],
+    "m": 2,
+    "excitation_fraction": 0.01,
+    "spin_adapted": true,
+    "internally_contracted": false
+  },
+  "success_criteria": {
+    "finite": true,
+    "spin_tolerance_s2": 0.0001,
+    "luscc_energy_not_above_mlas_eh": 1e-9
+  }
+}

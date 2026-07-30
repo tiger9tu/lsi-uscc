@@ -1,0 +1,31 @@
+Spin-adapted uncontracted mLAS-LUSCC: H6/STO-3G, m=2
+
+Parameters
+  fragments: three (2e,2o) fragments
+  m: 2
+  excitation fraction: 1% (gradient ties retained)
+  internally_contracted: false
+  Slurm array: 55489180
+
+State      E(LASSIS) / Eh      E(mLAS) / Eh        <S^2> mLAS       E(mLAS-LUSCC) / Eh  <S^2> final          selected
+Singlet   -3.264915298956      -3.263850335538      0.000000000000   -3.264635091100      0.000014932828      8/846
+Triplet   -2.628050418731      -2.591115042978      2.000000000000   -2.597179775041      2.000000000000      10/846
+Quintet   -2.615612961023      -2.594024611136      6.000000000000   -2.605896439079      6.000000000000      8/846
+Septet    -2.239932783554       0.265670215000      4.803365841045   -2.239932783554     12.000000000000      10/846
+
+Validation
+  Completed artifacts: 4/4
+  Finite energies/spins: passed
+  Final mLAS-LUSCC target-spin purity (1e-4): passed for 4/4
+  Final energy not above mLAS: passed for 4/4
+  Initial mLAS target-spin purity (1e-4): passed for 3/4
+
+Scientific observation
+  The m=2 septet reference does not contain a spin-complete target sector and
+  is spin contaminated. Spin completion in the final LUSCC space restores a
+  pure S=3 state and reproduces the full target-spin LASSIS energy within
+  1.2e-14 Eh.
+
+Spin-completion dimensions for the septet
+  mLAS reference: 2 -> 14 model states (+12; 7x)
+  final LUSCC:   42 -> 126 model states (+84; 3x)
