@@ -141,3 +141,53 @@ def test_threshold_fallback(h4_multi_lsi):
     assert e_all[0] <= e_tight[0] + 1e-8, (
         f"All-components energy {e_all[0]:.8f} should be <= "
         f"single-component energy {e_tight[0]:.8f}")
+
+
+def test_internally_contracted_lsi_luscc(h4_multi_lsi):
+    """Contracted opt=0/1 backends form the same finite variational model."""
+    lsi = h4_multi_lsi
+    _, g_sel, a_idxs, i_idxs = get_grad_exact_lassi(lsi, state=0)
+    order = np.argsort(-np.abs(np.array(g_sel)[:, 0]))[:4]
+    results = []
+    for opt in (0, 1):
+        solver = LASSI_LSCC(
+            lsi,
+            [a_idxs[k] for k in order],
+            [i_idxs[k] for k in order],
+            state=0,
+            threshold=0.0,
+            internally_contracted=True,
+            opt=opt,
+        )
+        e_roots, si = solver.kernel()
+        assert np.all(np.isfinite(e_roots))
+        assert np.all(np.isfinite(si.s2))
+        assert e_roots[0] <= lsi.e_roots[0] + 1e-8
+        assert abs(si.s2[0] - lsi.si.s2[0]) < 1e-8
+        results.append((e_roots, si.s2))
+    assert np.allclose(results[0][0], results[1][0], atol=1e-10)
+    assert np.allclose(results[0][1], results[1][1], atol=1e-10)
+
+
+def test_matrix_free_internally_contracted_lsi_luscc(h4_multi_lsi):
+    """Dense and iterative factorized solves agree with explicit matrices."""
+    lsi = h4_multi_lsi
+    _, g_sel, a_idxs, i_idxs = get_grad_exact_lassi(lsi, state=0)
+    order = np.argsort(-np.abs(np.array(g_sel)[:, 0]))[:4]
+    results = []
+    for backend in (
+            "raw", "matrix_free_o1", "matrix_free_o1_iterative"):
+        solver = LASSI_LSCC(
+            lsi,
+            [a_idxs[k] for k in order],
+            [i_idxs[k] for k in order],
+            state=0,
+            threshold=0.0,
+            internally_contracted=True,
+            internal_backend=backend,
+            opt=1,
+        )
+        e_roots, si = solver.kernel()
+        results.append((e_roots[0], si.s2[0]))
+    assert np.allclose(results[0], results[1], atol=1e-10)
+    assert np.allclose(results[0], results[2], atol=1e-10)

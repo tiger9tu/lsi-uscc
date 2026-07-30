@@ -2,8 +2,10 @@ from mrh.my_pyscf.lassi import LASSI
 from mrh.my_pyscf.mcscf.addons import state_average_n_mix, get_h1e_zipped_fcisolver
 from mrh.my_pyscf.mcscf.productstate import ImpureProductStateFCISolver
 from mrh.my_pyscf.lassi.op_o1.frag import FragTDMInt
+from mrh.my_pyscf.lassi.op_o1.utilities import fermion_spin_shuffle
 import numpy as np
 from pyscf import lib
+from pyscf.lib.numpy_helper import tag_array
 from pyscf.scf.addons import canonical_orth_ as _pyscf_canonical_orth
 from pyscf.fci import addons
 from pyscf.fci.direct_spin1 import trans_rdm12s as _fci_tdm12s
@@ -12,6 +14,7 @@ from pyscf.csf_fci import csf_solver
 from helper.op_ci import apply_operator_string_fci
 from helper import util
 from copy import deepcopy
+import os
 
 
 # ── Optimized FragTDMInt subclass ──────────────────────────────────────────────
@@ -101,11 +104,21 @@ class LSI_LUSCC(LASSI):
 
     def __init__(self, las_or_lsi, a_idxs, i_idxs,
                  state=0, threshold=0.01, top_m=None, lindep_thresh=None, norm_thresh=None,
-                 opt=1, **kwargs):
+                 opt=1, smult_si=None, internally_contracted=False,
+                 internal_backend="raw", share_spectator_ci=False, **kwargs):
         self.a_idxs = a_idxs
         self.i_idxs = i_idxs
         self._smult_si = smult_si
+        self._internally_contracted = internally_contracted
+        if internal_backend not in (
+                "raw", "matrix_free_o1", "matrix_free_o1_iterative"):
+            raise ValueError(
+                "internal_backend must be 'raw', 'matrix_free_o1', or "
+                "'matrix_free_o1_iterative'")
+        self._internal_backend = internal_backend
+        self._share_spectator_ci = bool(share_spectator_ci)
         self._n_ref_rs = None
+        self._ref_product_indices = []
         self._exc_rs_meta = []
         self._lsi_tdm_cache = None
         self._fragint_class = None
@@ -157,7 +170,8 @@ class LSI_LUSCC(LASSI):
     # Operator application
     # ------------------------------------------------------------------
 
-    def getAci(self, a_idx, i_idx, ref_ci=None, ref_nelecas_sub=None):
+    def getAci(self, a_idx, i_idx, ref_ci=None, ref_nelecas_sub=None,
+               return_norm_phase=False):
         """Apply excitation operator to a reference CI vector.
 
         A|ψ⟩ = a₀a₁…i₁i₀|ψ⟩
@@ -182,8 +196,13 @@ class LSI_LUSCC(LASSI):
         if ref_nelecas_sub is None:
             ref_nelecas_sub = self.nelecas_sub
 
-        Aci = deepcopy(ref_ci)
+        # Excitation operators replace only the CI arrays of fragments they
+        # touch. Spectator arrays are immutable, so an optional shallow list
+        # copy preserves their identity and lets MRH recognize equivalent
+        # rootspaces without duplicating the underlying CI storage.
+        Aci = list(ref_ci) if self._share_spectator_ci else deepcopy(ref_ci)
         frag_ops = [[] for _ in range(self.nfrags)]
+        ordered_ops = []
 
         for op_type, idx_list in [('ann', i_idx), ('cre', a_idx[::-1])]:
             for idx in idx_list:
@@ -192,19 +211,43 @@ class LSI_LUSCC(LASSI):
                 frag_idx = np.searchsorted(frag_orbs_start, spatial, side='right') - 1
                 idx_in_frag = spatial - frag_orbs_start[frag_idx]
                 frag_ops[frag_idx].append((op_type, idx_in_frag, spin))
+                ordered_ops.append((op_type, frag_idx, spin))
 
         nelecas_sub = deepcopy(list(ref_nelecas_sub))
+        raw_norm = 1.0
         for fi, ci_f in enumerate(Aci):
             if len(frag_ops[fi]) == 0:
                 continue
             ci_f_new, (neleca, nelecb) = apply_operator_string_fci(
                 ci_f, self.ncas_sub[fi], ref_nelecas_sub[fi], frag_ops[fi])
             if ci_f_new is None or np.all(ci_f_new == 0):
+                if return_norm_phase:
+                    return None, None, 0.0, 0
                 return None, None
-            ci_f_new = ci_f_new / np.linalg.norm(ci_f_new.ravel())
+            fragment_norm = np.linalg.norm(ci_f_new.ravel())
+            raw_norm *= fragment_norm
+            ci_f_new = ci_f_new / fragment_norm
             Aci[fi] = ci_f_new
             nelecas_sub[fi] = (neleca, nelecb)
 
+        if return_norm_phase:
+            # Convert the globally ordered spin-orbital operator into the
+            # fragment-product convention used by the normalized CI factors.
+            # The initial/final spin shuffles connect spin-major LASSI basis
+            # states to fragment-major states; the middle parity is the
+            # Jordan-Wigner string accumulated while applying the operators.
+            current = [sum(nelec) for nelec in ref_nelecas_sub]
+            cross_phase = 1
+            for op_type, frag_idx, _spin in ordered_ops:
+                cross_phase *= (-1) ** sum(current[:frag_idx])
+                current[frag_idx] += 1 if op_type == 'cre' else -1
+            ref_phase = fermion_spin_shuffle(
+                [nelec[0] for nelec in ref_nelecas_sub],
+                [nelec[1] for nelec in ref_nelecas_sub])
+            final_phase = fermion_spin_shuffle(
+                [nelec[0] for nelec in nelecas_sub],
+                [nelec[1] for nelec in nelecas_sub])
+            return Aci, nelecas_sub, raw_norm, ref_phase * cross_phase * final_phase
         return Aci, nelecas_sub
 
     def _get_active_frags(self, a_idx, i_idx):
@@ -277,6 +320,7 @@ class LSI_LUSCC(LASSI):
         # independent bases — the Cartesian product IS the correct product
         # state expansion for that rootspace.
         ref_rs_seen = {}   # r -> pool_idx of first occurrence
+        ref_product_indices = []
         new_ci = [[] for _ in range(self.nfrags)]
         self.nroots = 0
 
@@ -285,6 +329,10 @@ class LSI_LUSCC(LASSI):
             if r in ref_rs_seen:
                 continue  # already added this rootspace's full CI
             ref_rs_seen[r] = self.nroots
+            if self._ref_lsi is not None:
+                ref_product_indices.extend(np.where(rootaddr == r)[0].tolist())
+            else:
+                ref_product_indices.append(int(r))
             for fi in range(self.nfrags):
                 new_ci[fi].append(ref.ci[fi][r] if self._ref_lsi is not None
                                   else original_ci[fi][r])
@@ -296,6 +344,7 @@ class LSI_LUSCC(LASSI):
 
         n_ref_rs = self.nroots
         self._n_ref_rs = n_ref_rs
+        self._ref_product_indices = ref_product_indices
         self._exc_rs_meta = []
 
         # ── Excited states: one rootspace per valid (A, j) combination ────
@@ -305,15 +354,16 @@ class LSI_LUSCC(LASSI):
         # Cartesian-product states (because the fragment CIs come from
         # different j's and are not jointly LASCI-orthogonalised).
         # We therefore keep one rootspace per excited state, same as before.
-        for a_idx, i_idx in zip(self.a_idxs, self.i_idxs):
+        for operator_index, (a_idx, i_idx) in enumerate(zip(self.a_idxs, self.i_idxs)):
             active_frags = self._get_active_frags(a_idx, i_idx)
             for j in sig_indices:
                 ref_ci_j, ref_nelecas_sub_j, r_source = _ref_ci_and_nelec(j)
                 r_pool = ref_rs_seen.get(r_source)
 
                 for dir_idx, (a, i) in enumerate([(a_idx, i_idx), (i_idx, a_idx)]):
-                    Aci, nelecas_sub_new = self.getAci(
-                        a, i, ref_ci=ref_ci_j, ref_nelecas_sub=ref_nelecas_sub_j)
+                    Aci, nelecas_sub_new, raw_norm, operator_phase = self.getAci(
+                        a, i, ref_ci=ref_ci_j, ref_nelecas_sub=ref_nelecas_sub_j,
+                        return_norm_phase=True)
                     if Aci is not None:
                         # Track metadata for the within-group TDM optimization
                         if fragaddr is not None and r_pool is not None:
@@ -326,6 +376,11 @@ class LSI_LUSCC(LASSI):
                             'ref_rs_pool': r_pool,
                             'ki_per_frag': ki_per_frag,
                             'nelecas': [tuple(nelecas_sub_new[fi]) for fi in range(self.nfrags)],
+                            'operator_index': operator_index,
+                            'source_product_index': int(j),
+                            'direction': dir_idx,
+                            'raw_norm': float(raw_norm),
+                            'operator_phase': int(operator_phase),
                         })
 
                         for fi, ci_f in enumerate(Aci):
@@ -367,6 +422,266 @@ class LSI_LUSCC(LASSI):
             self.weights).fcisolver)
             for c_r, m2_r, s2p1_r, ir_r in zip(
                 charges.T, spins.T, smults.T, wfnsyms.T)]
+
+    def _build_internal_contraction(self, sparse=False):
+        """Map the raw LAS-product basis onto {|lsi'>, (T-T†)|lsi'>}.
+
+        ``prepare_states_`` normalizes each excited fragment product
+        independently.  Recover the physical operator action with its recorded
+        raw norm and fermionic phase, and retain one column per selected
+        anti-Hermitian generator.
+        """
+        from mrh.my_pyscf.lassi.citools import get_lroots
+
+        if self._ref_lsi is None:
+            ref_coeff = np.ones(1)
+        else:
+            ref_coeff = np.asarray(
+                self._ref_lsi.si[:, self._lsi_state]).reshape(-1)
+
+        lroots = get_lroots(self.ci)
+        nprods_r = np.prod(lroots, axis=0).astype(int)
+        offsets = np.append(0, np.cumsum(nprods_r))
+        nraw = int(offsets[-1])
+        nref_raw = int(offsets[self._n_ref_rs])
+        if nref_raw != len(self._ref_product_indices):
+            raise RuntimeError(
+                "internally contracted reference-address mismatch: "
+                f"{nref_raw} raw states != {len(self._ref_product_indices)} products")
+
+        shape = (nraw, 1 + len(self.a_idxs))
+        dtype = np.result_type(ref_coeff.dtype, np.float64)
+        if sparse:
+            from scipy.sparse import coo_matrix
+
+            rows = []
+            columns = []
+            values = []
+
+            def add(row, column, value):
+                if value != 0:
+                    rows.append(row)
+                    columns.append(column)
+                    values.append(value)
+        else:
+            transform = np.zeros(shape, dtype=dtype)
+
+            def add(row, column, value):
+                transform[row, column] += value
+
+        for raw_idx, product_idx in enumerate(self._ref_product_indices):
+            add(raw_idx, 0, ref_coeff[product_idx])
+
+        if len(self._exc_rs_meta) != self.nroots - self._n_ref_rs:
+            raise RuntimeError("excited-rootspace metadata is incomplete")
+        for exc_idx, meta in enumerate(self._exc_rs_meta):
+            rootspace = self._n_ref_rs + exc_idx
+            if nprods_r[rootspace] != 1:
+                raise RuntimeError(
+                    "internally contracted excited rootspaces must contain one product state")
+            row = int(offsets[rootspace])
+            product_idx = meta["source_product_index"]
+            direction_sign = 1 if meta["direction"] == 0 else -1
+            add(row, 1 + meta["operator_index"], (
+                ref_coeff[product_idx]
+                * meta["raw_norm"]
+                * meta["operator_phase"]
+                * direction_sign
+            ))
+
+        if sparse:
+            transform = coo_matrix(
+                (np.asarray(values, dtype=dtype), (rows, columns)),
+                shape=shape,
+            ).tocsr()
+            transform.sum_duplicates()
+
+        # A selected generator may annihilate every retained reference
+        # component.  Such a tangent is exactly zero and is not part of the
+        # contracted model.
+        if sparse:
+            norms = np.sqrt(
+                np.asarray(abs(transform).power(2).sum(axis=0)).ravel())
+        else:
+            norms = np.linalg.norm(transform, axis=0)
+        keep = norms > self._norm_thresh
+        keep[0] = True
+        dropped = int(np.count_nonzero(~keep))
+        transform = transform[:, keep]
+        lib.logger.info(
+            self,
+            "Internally contracted LUSCC basis: %d raw states -> %d states "
+            "(1 reference + %d tangents; %d null generators dropped)",
+            nraw, transform.shape[1], transform.shape[1] - 1, dropped)
+        return transform
+
+    def _kernel_internally_contracted(self, **kwargs):
+        """Contract H/S/S2 and solve the small generalized eigenvalue problem."""
+        from scipy import linalg
+        from mrh.my_pyscf.lassi import op_o0, op_o1
+        from mrh.my_pyscf.lassi.lassi import las_symm_tuple
+
+        if self._smult_si is not None or kwargs.get("smult_si") is not None:
+            raise ValueError(
+                "internally contracted LUSCC currently discovers spin; do not set smult_si")
+
+        iterative_internal = (
+            self._internal_backend == "matrix_free_o1_iterative")
+        transform = self._build_internal_contraction(
+            sparse=iterative_internal)
+        e0, h1, h2 = self.ham_2q(
+            mo_coeff=kwargs.get("mo_coeff"),
+            veff_c=kwargs.get("veff_c"),
+            h2eff_sub=kwargs.get("h2eff_sub"),
+            soc=0)
+        nelec_frs = self.get_nelec_frs()
+        opt = kwargs.get("opt", self.opt)
+        if opt not in (0, 1):
+            raise ValueError(f"unsupported LASSI contraction backend opt={opt}")
+        chkkey = self.get_o1_chk_key() if callable(
+            getattr(self, "get_o1_chk_key", None)) else None
+        if self._internal_backend in (
+                "matrix_free_o1", "matrix_free_o1_iterative"):
+            if opt != 1:
+                raise ValueError(
+                    f"{self._internal_backend} is an opt=1 factorized "
+                    "operator backend; "
+                    "set opt=1")
+            h_op, s2_op, ovlp_op, _, get_raw_ovlp = (
+                op_o1.gen_contract_op_si_hdiag(
+                self, h1, h2, self.ci, nelec_frs, smult_fr=None, soc=0,
+                chkfile=getattr(self, "chkfile", None), chkkey=chkkey))
+
+            # Stream contracted vectors without ever forming an nraw x nraw
+            # Hamiltonian.  The dense variant builds requested k x k
+            # matrices; the iterative variant builds only the overlap metric
+            # and solves the ground root through Hamiltonian matvecs.
+            ncontract = transform.shape[1]
+            dtype = np.result_type(transform.dtype, h1.dtype, h2.dtype)
+            transform_h = transform.conj().T
+            if iterative_internal:
+                # The factorized overlap LinearOperator is optimized for
+                # Davidson-sized trial blocks, not thousands of basis
+                # columns.  Its parent exposes an exact direct overlap
+                # constructor that is cheap relative to H and bounded by the
+                # contracted-space O(k^2) metric we need in any case.
+                raw_ovlp = get_raw_ovlp()
+                transform_dense = transform.toarray()
+                sc = transform_dense.conj().T @ raw_ovlp @ transform_dense
+                sc = (sc + sc.conj().T) / 2
+                lib.logger.info(
+                    self,
+                    "Direct overlap metric: %d raw states -> %d contracted "
+                    "states",
+                    raw_ovlp.shape[0], ncontract)
+                raw2orth = _pyscf_canonical_orth(
+                    sc, thr=self._lindep_thresh)
+                north = raw2orth.shape[1]
+                if north == 0:
+                    raise RuntimeError(
+                        "internally contracted LUSCC basis is linearly "
+                        "dependent")
+
+                def horth_matvec(vector):
+                    contracted = raw2orth @ vector
+                    raw = transform @ contracted
+                    hraw = h_op.matvec(raw)
+                    return raw2orth.conj().T @ (transform_h @ hraw)
+
+                if north == 1:
+                    coeff_orth = np.ones((1, 1), dtype=dtype)
+                    e = np.asarray(
+                        [np.real(horth_matvec(coeff_orth[:, 0])[0])])
+                else:
+                    from scipy.sparse.linalg import LinearOperator, eigsh
+
+                    horth_op = LinearOperator(
+                        (north, north), matvec=horth_matvec, dtype=dtype)
+                    reference = np.zeros(ncontract, dtype=dtype)
+                    reference[0] = 1
+                    v0 = raw2orth.conj().T @ (sc @ reference)
+                    v0_norm = np.linalg.norm(v0)
+                    if v0_norm:
+                        v0 /= v0_norm
+                    else:
+                        v0 = np.ones(north, dtype=dtype)
+                        v0 /= np.linalg.norm(v0)
+                    iterative_tol = kwargs.get(
+                        "iterative_tol",
+                        min(1e-10, getattr(self, "conv_tol", 1e-8)))
+                    iterative_maxiter = kwargs.get(
+                        "iterative_maxiter", max(1000, 5 * north))
+                    e, coeff_orth = eigsh(
+                        horth_op, k=1, which="SA", v0=v0,
+                        tol=iterative_tol, maxiter=iterative_maxiter)
+                    order = np.argsort(e)
+                    e = np.real(e[order])
+                    coeff_orth = coeff_orth[:, order]
+                coeff_contract = raw2orth @ coeff_orth
+                si = transform @ coeff_contract
+                s2 = np.asarray([
+                    np.real(np.vdot(si[:, root], s2_op.matvec(si[:, root])))
+                    for root in range(si.shape[1])
+                ])
+                e = np.real(e) + e0
+            else:
+                hc = np.empty((ncontract, ncontract), dtype=dtype)
+                sc = np.empty_like(hc)
+                s2c = np.empty_like(hc)
+                for column in range(ncontract):
+                    ket = transform[:, column]
+                    hc[:, column] = transform_h @ h_op.matvec(ket)
+                    sc[:, column] = transform_h @ ovlp_op.matvec(ket)
+                    s2c[:, column] = transform_h @ s2_op.matvec(ket)
+                    if column == 0 or (column + 1) % 10 == 0:
+                        lib.logger.info(
+                            self,
+                            "Matrix-free internal contraction: %d/%d columns",
+                            column + 1, ncontract)
+        else:
+            op = (op_o0, op_o1)[opt]
+            ham, s2mat, ovlp, _ = op.ham(
+                self, h1, h2, self.ci, nelec_frs, smult_fr=None, soc=0,
+                chkfile=getattr(self, "chkfile", None), chkkey=chkkey)
+            hc = transform.conj().T @ ham @ transform
+            sc = transform.conj().T @ ovlp @ transform
+            s2c = transform.conj().T @ s2mat @ transform
+        if not iterative_internal:
+            hc = (hc + hc.conj().T) / 2
+            sc = (sc + sc.conj().T) / 2
+            s2c = (s2c + s2c.conj().T) / 2
+
+            raw2orth = _pyscf_canonical_orth(sc, thr=self._lindep_thresh)
+            if raw2orth.shape[1] == 0:
+                raise RuntimeError(
+                    "internally contracted LUSCC basis is linearly dependent")
+            horth = raw2orth.conj().T @ hc @ raw2orth
+            e, coeff_orth = linalg.eigh(horth)
+            coeff_contract = raw2orth @ coeff_orth
+            si = transform @ coeff_contract
+            s2 = np.real(np.einsum(
+                "ki,kl,li->i", coeff_contract.conj(), s2c, coeff_contract))
+            e = np.real(e) + e0
+
+        statesym, _ = las_symm_tuple(self)
+        unique_sym = sorted(set(statesym))
+        if len(unique_sym) != 1:
+            raise RuntimeError(
+                "internally contracted LUSCC currently requires one global symmetry block")
+        rootsym = np.asarray([unique_sym[0]] * len(e))
+        nelec = [tuple(sym[:2]) for sym in rootsym]
+        wfnsym = [sym[-1] for sym in rootsym]
+        self.e_roots = e
+        self.s2 = s2
+        self.nelec = nelec
+        self.wfnsym = wfnsym
+        self.rootsym = rootsym
+        self.si = tag_array(
+            si, s2=s2, nelec=nelec, wfnsym=wfnsym, rootsym=rootsym,
+            break_symmetry=False, soc=False)
+        if getattr(self, "sisolver", None) is not None:
+            self.sisolver.converged = True
+        return self.e_roots, self.si
 
     # ------------------------------------------------------------------
     # Within-group spectator TDM precomputation (Optimization 2)
@@ -508,6 +823,78 @@ class LSI_LUSCC(LASSI):
     # Kernel
     # ------------------------------------------------------------------
 
+    def _spin_complete_states_(self):
+        """Close the prepared LAS-LUSCC model under local-Sz spin shuffles.
+
+        Gradient selection acts on spin-orbital generators and can retain only
+        part of a local-spin manifold.  A spin-targeted SISolver requires the
+        corresponding local-Sz partners so that its orthogonal basis carries a
+        well-defined total spin.  Generate those partners with MRH's native
+        spin-rotation machinery without changing the selected generator seeds.
+
+        Prepared LUSCC spaces can contain several distinct CI vectors with the
+        same charge/spin/smult labels.  ``spaces.spin_shuffle`` treats those
+        labels as unique state identifiers and therefore rejects or collapses
+        such spaces.  Rotate each prepared CI rootspace independently instead;
+        duplicate labels remain distinct basis vectors, as required.
+        """
+        from mrh.my_pyscf.lassi.spaces import SingleLASRootspace
+        from mrh.my_pyscf.mcscf.lasci import get_space_info
+
+        charges, spins, smults, wfnsyms = get_space_info(self)
+        nroots_before = int(self.nroots)
+        out_charges, out_spins, out_smults, out_wfnsyms = [], [], [], []
+        out_weights = []
+        out_ci = [[] for _ in range(self.nfrags)]
+        for iroot in range(nroots_before):
+            ci_ref = [self.ci[ifrag][iroot] for ifrag in range(self.nfrags)]
+            ref = SingleLASRootspace(
+                self, spins[iroot], smults[iroot], charges[iroot],
+                self.weights[iroot], ci=ci_ref,
+                fragsym=wfnsyms[iroot])
+            ci_sz = ref.get_ci_szrot()
+            for partner in ref.gen_spin_shuffles():
+                partner_ci = [
+                    ci_sz[ifrag][partner.spins[ifrag]]
+                    for ifrag in range(self.nfrags)
+                ]
+                out_charges.append(partner.charges.copy())
+                out_spins.append(partner.spins.copy())
+                out_smults.append(partner.smults.copy())
+                out_wfnsyms.append(np.asarray(wfnsyms[iroot]).copy())
+                out_weights.append(
+                    self.weights[iroot]
+                    if np.array_equal(partner.spins, spins[iroot]) else 0.0
+                )
+                for ifrag, ci in enumerate(partner_ci):
+                    out_ci[ifrag].append(ci)
+
+        # Build the solver metadata with no cached CI so state_average does not
+        # try to match duplicate quantum-label rows.  The independently rotated
+        # vectors are installed immediately afterwards.
+        las_seed = self._las.state_average(
+            weights=np.ones(1), charges=charges[:1], spins=spins[:1],
+            smults=smults[:1], wfnsyms=wfnsyms[:1],
+            assert_no_dupes=False)
+        las_seed.ci = None
+        las_complete = las_seed.state_average(
+            weights=np.asarray(out_weights), charges=np.asarray(out_charges),
+            spins=np.asarray(out_spins), smults=np.asarray(out_smults),
+            wfnsyms=np.asarray(out_wfnsyms), assert_no_dupes=False)
+        las_complete.ci = out_ci
+        las_complete.converged = self.converged
+
+        self.ci = las_complete.ci
+        self.fciboxes = las_complete.fciboxes
+        self.weights = np.asarray(las_complete.weights)
+        self.nroots = int(las_complete.nroots)
+        # Spin shuffling changes rootspace addresses, invalidating the optional
+        # spectator-cache metadata.  The unoptimised path remains exact.
+        self._exc_rs_meta = []
+        lib.logger.info(
+            self, "Spin-completed LAS-LUSCC model: %d -> %d rootspaces",
+            nroots_before, self.nroots)
+
     def _filter_smult_roots_(self, smult_si, tol=1e-4):
         target_s = (smult_si - 1) / 2
         target_s2 = target_s * (target_s + 1)
@@ -517,6 +904,10 @@ class LSI_LUSCC(LASSI):
             raise RuntimeError(
                 f"LSI_LUSCC found no roots with spin multiplicity {smult_si} "
                 f"(target <S^2>={target_s2})")
+        sisolver = getattr(self, "sisolver", None)
+        nroots = getattr(sisolver, "nroots", None)
+        if nroots is not None:
+            idx = idx[:nroots]
 
         self.e_roots = self.e_roots[idx]
         si = self.si[:, idx]
@@ -533,13 +924,47 @@ class LSI_LUSCC(LASSI):
     def kernel(self, **kwargs):
         requested_smult = self._smult_si if self._smult_si is not None else kwargs.get('smult_si')
         injected_davidson = False
-        if self._smult_si is not None:
-            kwargs.setdefault('smult_si', self._smult_si)
-        if requested_smult is not None and 'davidson_only' not in kwargs:
-            kwargs['davidson_only'] = True
-            injected_davidson = True
+        # Newer MRH branches accept ``smult_si`` and provide a spin-coupled
+        # Davidson solver.  tiger9tu/mrh master does not; on that API perform
+        # the exact direct diagonalization and filter the resulting spin-pure
+        # roots by <S^2> below.
+        # Spin targeting is an object-level SISolver capability.  Some MRH
+        # versions expose ``smult_si`` only on ``LASSI.kernel`` while their
+        # module-level ``lassi`` function retains an older signature, so the
+        # latter is not a reliable capability probe.
+        sisolver = getattr(self, "sisolver", None)
+        supports_smult_si = sisolver is not None and hasattr(sisolver, "smult")
+        if supports_smult_si:
+            if self._smult_si is not None:
+                kwargs.setdefault('smult_si', self._smult_si)
+            if requested_smult is not None and 'davidson_only' not in kwargs:
+                kwargs['davidson_only'] = True
+                injected_davidson = True
+        else:
+            kwargs.pop('smult_si', None)
 
         self.prepare_states_()
+        if self._internally_contracted:
+            # The spectator-TDM cache accelerates only the opt=1 operator
+            # backend. Building it for opt=0 is pure overhead and can dominate
+            # the small internally contracted solve.
+            if self.opt == 1:
+                cache = self._build_lsi_tdm_cache()
+                if cache is not None:
+                    self._lsi_tdm_cache = cache
+                    self._fragint_class = LSIFragTDMInt
+            try:
+                return self._kernel_internally_contracted(**kwargs)
+            finally:
+                self._lsi_tdm_cache = None
+                self._fragint_class = None
+        # A target-spin solve needs a model closed under local-Sz rotations
+        # regardless of whether this MRH version can target spin inside its
+        # Davidson solver.  Older versions use the exact direct solver and
+        # filter by <S^2> afterwards; without this completion their truncated
+        # basis may contain no spin-pure root to retain.
+        if requested_smult is not None:
+            self._spin_complete_states_()
 
         # Build spectator TDM cache and activate the optimised FragTDMInt subclass
         cache = self._build_lsi_tdm_cache()
@@ -548,9 +973,16 @@ class LSI_LUSCC(LASSI):
             self._fragint_class = LSIFragTDMInt
 
         import mrh.my_pyscf.lassi.citools as _citools
-        import mrh.my_pyscf.lassi.basis as _basis
-        import mrh.my_pyscf.lassi.sisolver as _sisolver
         import mrh.my_pyscf.lassi.spaces as _spaces
+
+        try:
+            import mrh.my_pyscf.lassi.basis as _basis
+        except ImportError:
+            _basis = None
+        try:
+            import mrh.my_pyscf.lassi.sisolver as _sisolver
+        except ImportError:
+            _sisolver = None
 
         def _safe_canonical_orth(ovlp, thr=1e-7):
             ovlp = np.asarray(ovlp)
@@ -572,21 +1004,25 @@ class LSI_LUSCC(LASSI):
                 ovlp.shape[0] - np.count_nonzero(keep), self._norm_thresh)
             return xmat
 
-        _thresh_modules = [_citools, _basis, _sisolver, _spaces]
+        _thresh_modules = [m for m in (_citools, _basis, _sisolver, _spaces)
+                           if m is not None]
         _old_thresh = {}
         for _mod in _thresh_modules:
             if hasattr(_mod, "LINDEP_THRESH"):
                 _old_thresh[_mod] = _mod.LINDEP_THRESH
                 _mod.LINDEP_THRESH = self._lindep_thresh
-        _old_basis_canonical_orth = _basis.canonical_orth_
-        _old_sisolver_canonical_orth = _sisolver.canonical_orth_
-        _basis.canonical_orth_ = _safe_canonical_orth
-        _sisolver.canonical_orth_ = _safe_canonical_orth
+        _orth_modules = [m for m in (_basis, _sisolver)
+                         if m is not None and hasattr(m, 'canonical_orth_')]
+        _old_canonical_orth = {m: m.canonical_orth_ for m in _orth_modules}
+        for _mod in _orth_modules:
+            _mod.canonical_orth_ = _safe_canonical_orth
         try:
             try:
                 result = LASSI.kernel(self, **kwargs)
             except AssertionError:
                 if requested_smult is None or not injected_davidson:
+                    raise
+                if os.environ.get("LUSCC_STRICT_SPIN") == "1":
                     raise
                 lib.logger.warn(
                     self,
@@ -598,11 +1034,13 @@ class LSI_LUSCC(LASSI):
                 fallback_kwargs['davidson_only'] = False
                 result = LASSI.kernel(self, **fallback_kwargs)
                 result = self._filter_smult_roots_(requested_smult)
+            if requested_smult is not None and not supports_smult_si:
+                result = self._filter_smult_roots_(requested_smult)
         finally:
             for _mod, _thr in _old_thresh.items():
                 _mod.LINDEP_THRESH = _thr
-            _basis.canonical_orth_ = _old_basis_canonical_orth
-            _sisolver.canonical_orth_ = _old_sisolver_canonical_orth
+            for _mod, _orth in _old_canonical_orth.items():
+                _mod.canonical_orth_ = _orth
             self._lsi_tdm_cache = None
             self._fragint_class = None
         return result

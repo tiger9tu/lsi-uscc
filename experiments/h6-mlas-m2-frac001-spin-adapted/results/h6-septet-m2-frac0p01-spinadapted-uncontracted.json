@@ -1,0 +1,51 @@
+{
+  "gradient_elapsed_s": 1.4090149402618408,
+  "las": {
+    "energy_eh": -3.26350405215838
+  },
+  "lassis": {
+    "elapsed_s": 3.2108445167541504,
+    "energy_eh": -2.2399327835540648,
+    "s2": 11.999999999999996,
+    "spin": 2.9999999999999996
+  },
+  "mlas": {
+    "elapsed_s": 0.4168236255645752,
+    "energy_eh": 0.2656702149996124,
+    "s2": 4.803365841045492,
+    "spin": 1.74796927048514
+  },
+  "mlas_luscc": {
+    "elapsed_s": 12.877021312713623,
+    "energy_eh": -2.2399327835540532,
+    "s2": 11.99999999999982,
+    "spin": 2.9999999999999742
+  },
+  "parameters": {
+    "available_excitations": 846,
+    "effective_m": 2,
+    "excitation_fraction": 0.01,
+    "internally_contracted": false,
+    "m": 2,
+    "multiplicity": 7,
+    "selected_excitations": 10,
+    "spin_adapted": true
+  },
+  "provenance": {
+    "ended_unix": 1785422570.4716082,
+    "git_commit": "8d314f569c9d1be7f81b30fe6c33c49f2f3ff1a8",
+    "git_dirty": true,
+    "hostname": "gl3201.arc-ts.umich.edu",
+    "mrh_commit": "0162cb9dbaf63bec50da484193b979e8d2689ced",
+    "slurm_job_id": "55489180",
+    "started_unix": 1785422552.0564375
+  },
+  "run_id": "h6-septet-m2-frac0p01-spinadapted-uncontracted",
+  "status": "failed_validation",
+  "validation": {
+    "finite": true,
+    "luscc_not_above_mlas": true,
+    "luscc_spin_pure_1e4": true,
+    "mlas_spin_pure_1e4": false
+  }
+}
